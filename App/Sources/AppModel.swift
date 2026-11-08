@@ -164,7 +164,20 @@ final class AppModel {
                         outcome.direct = HeadwordGroup.sortedForScan(outcome.direct)
                     }
                 }
-                outcome.byMeaning = HeadwordGroup.group(store.reverseSearch(text, limit: 30).map { ($0.entry, text, []) }, priority: priority)
+                // A match inside a compound (仕立て → ◎仕立屋 "sarto") shows the compound itself.
+                var meaningInputs: [(entry: TermEntry, matchedText: String, reasons: [Reason])] = []
+                for hit in store.reverseSearch(text, limit: 30) {
+                    if let sub = ReverseSearch.subentry(matching: text, glossaryJSON: hit.entry.glossaryJSON),
+                       sub != hit.entry.expression {
+                        let found = store.entries(matching: sub)
+                        if !found.isEmpty {
+                            meaningInputs += found.map { ($0, text, []) }
+                            continue
+                        }
+                    }
+                    meaningInputs.append((hit.entry, text, []))
+                }
+                outcome.byMeaning = HeadwordGroup.group(meaningInputs, priority: priority)
                 HeadwordGroup.attachMeta(&outcome.byMeaning, from: store, sortDictionary: sortDictionary)
                 let romajiRank = outcome.direct.compactMap(\.sortRank).min()
                 let meaningRank = outcome.byMeaning.prefix(3).compactMap(\.sortRank).min()

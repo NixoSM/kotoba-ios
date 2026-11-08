@@ -96,6 +96,35 @@ public enum ReverseSearch {
         "il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "di", "da", "del", "della", "e",
     ]
 
+    /// Bilingual dictionaries like 和伊 tuck compounds inside the main entry:
+    /// under 仕立て there is "◎仕立屋 (人)sarto". When the match is in such a
+    /// sub-entry, this returns the compound (仕立屋), so the result can show
+    /// the word that actually means "sarto" rather than its parent.
+    public static func subentry(matching query: String, glossaryJSON: Data) -> String? {
+        let lines = GlossaryText.items(fromJSON: glossaryJSON).flatMap { $0.split(separator: "\n").map(String.init) }
+        guard let hit = lines.firstIndex(where: { score(query: query, indexText: segments(of: [$0]).joined(separator: "\n")) > 0 }) else {
+            return nil
+        }
+        var j = hit - 1
+        while j > 0 {
+            let line = lines[j]
+            if line.unicodeScalars.contains(where: isLatinLetter) { j -= 1; continue }
+            return compound(from: line)
+        }
+        return nil // reached the entry's own header: the match belongs to the main word
+    }
+
+    /// "◎衣装係［方］" → 衣装係. nil for sentences, labels and headers.
+    static func compound(from line: String) -> String? {
+        var s = line.trimmingCharacters(in: .whitespaces)
+        while let first = s.first, "◎◇◆○●・".contains(first) { s.removeFirst() }
+        if let cut = s.firstIndex(where: { "［[（(〔【".contains($0) }) { s = String(s[..<cut]) }
+        s = s.trimmingCharacters(in: .whitespaces)
+        guard (1...10).contains(s.count), Kana.containsJapanese(s),
+              !s.contains(where: { "、。，！？「」…".contains($0) }) else { return nil }
+        return s
+    }
+
     /// Reads a Yomitan frequency value: a number, {value}, or {reading, frequency}.
     public static func frequencyValue(_ json: Any) -> Double? {
         switch json {

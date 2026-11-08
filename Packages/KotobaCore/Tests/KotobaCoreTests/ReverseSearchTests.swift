@@ -48,6 +48,23 @@ final class ReverseSearchTests: XCTestCase {
         XCTAssertNil(ReverseSearch.ftsQuery(for: "!!"))
     }
 
+    func testSubentryInsideBilingualEntry() {
+        let glossary = Data(#"["したて【仕立て】
+1 (衣服の)confezione
+◎仕立て代
+仕立て代を払う
+pagare il confezionamento di un vestito
+仕立屋
+(人)sarto[-a]; (店)sartoria"]"#.utf8)
+        XCTAssertEqual(ReverseSearch.subentry(matching: "sarto", glossaryJSON: glossary), "仕立屋")
+        XCTAssertNil(ReverseSearch.subentry(matching: "confezione", glossaryJSON: glossary))
+        let costume = Data(#"["いしょう【衣装】
+abiti, vestiti
+◎衣装係［方］
+〔劇・映・テ〕costumista [-i], vestiarista [-i]; (作製と管理)sarto [-a]"]"#.utf8)
+        XCTAssertEqual(ReverseSearch.subentry(matching: "costumista", glossaryJSON: costume), "衣装係")
+    }
+
     func testFrequencyValue() {
         XCTAssertEqual(ReverseSearch.frequencyValue(NSNumber(value: 12)), 12)
         XCTAssertEqual(ReverseSearch.frequencyValue(["value": 7, "displayValue": "7"] as [String: Any]), 7)
