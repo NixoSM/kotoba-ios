@@ -291,7 +291,7 @@ enum ResultsPage {
     .headword { font-family:var(--head-font); font-weight:700; font-size:calc(var(--size) * 2.35); line-height:1.25;
                 margin:0 0 4px; padding-right:96px; letter-spacing:.02em; }
     .headword::before { content:""; display:inline-block; width:.22em; height:.22em; background:var(--shu);
-                        vertical-align:.95em; margin-right:.28em; }
+                        vertical-align:.3em; margin-right:.3em; }
     .headword rt { font-family:var(--body-font); font-weight:400; font-size:.3em; color:var(--muted); letter-spacing:.08em; }
     .headword .reading { font-family:var(--body-font); font-weight:400; font-size:.42em; color:var(--muted); margin-left:.4em; }
     .actions { position:absolute; right:0; top:4px; display:flex; gap:8px; }
