@@ -33,10 +33,10 @@ public enum YomitanImporter {
             .filter { isBank($0, prefix: "term_bank_") || isBank($0, prefix: "term_meta_bank_") }
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
 
+        let mediaPaths = archive.filter { $0.type == .file }.map(\.path).filter(isMedia)
+
         var report = ImportProgress(dictionaryTitle: index.title, banksDone: 0, banksTotal: banks.count + (mediaPaths.isEmpty ? 0 : 1))
         progress(report)
-
-        let mediaPaths = archive.filter { $0.type == .file }.map(\.path).filter(isMedia)
 
         var styles = ""
         if let cssEntry = archive["styles.css"] {

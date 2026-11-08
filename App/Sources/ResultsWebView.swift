@@ -37,16 +37,17 @@ struct ResultsWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            guard let url = action.request.url, action.navigationType == .linkActivated else {
-                decisionHandler(.allow)
-                return
-            }
+            guard let url = action.request.url else { return decisionHandler(.allow) }
+            // kotoba:// comes from links and from the tap-to-look-up script.
             if url.scheme == "kotoba" {
                 onAction(url)
-            } else if url.scheme == "https" || url.scheme == "http" {
-                UIApplication.shared.open(url)
+                return decisionHandler(.cancel)
             }
-            decisionHandler(.cancel)
+            if action.navigationType == .linkActivated {
+                if url.scheme == "https" || url.scheme == "http" { UIApplication.shared.open(url) }
+                return decisionHandler(.cancel)
+            }
+            decisionHandler(.allow)
         }
     }
 }

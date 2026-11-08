@@ -30,7 +30,7 @@ enum ResultsPage {
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
         <style>\(baseCSS)</style>
         <style>\(dictionaryCSS)</style>
-        </head><body>\(body)</body></html>
+        </head><body>\(body)<script>\(tapScript)</script></body></html>
         """
     }
 
@@ -85,6 +85,44 @@ enum ResultsPage {
         return "d" + String(hash, radix: 36)
     }
 
+    /// Tap any Japanese character to look up the text starting there,
+    /// like hovering with Yomitan. Readings in <rt> are skipped.
+    private static let tapScript = """
+    (function(){
+      const jp = /^[\\u3040-\\u30ff\\u3400-\\u9fff\\uf900-\\ufaff々〆ヶ]/;
+      function charAt(x, y) {
+        const r = document.caretRangeFromPoint(x, y);
+        if (!r || r.startContainer.nodeType !== 3) return null;
+        let node = r.startContainer, off = r.startOffset;
+        if (off > 0) {
+          const t = document.createRange(); t.setStart(node, off - 1); t.setEnd(node, off);
+          const b = t.getBoundingClientRect();
+          if (x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) off -= 1;
+        }
+        if (off >= node.data.length) return null;
+        return {node, off};
+      }
+      document.addEventListener('click', function(e){
+        if (e.target.closest('a, summary, .mine, rt')) return;
+        const hit = charAt(e.clientX, e.clientY);
+        if (!hit || hit.node.parentElement.closest('rt')) return;
+        let text = hit.node.data.slice(hit.off);
+        if (!jp.test(text)) return;
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        walker.currentNode = hit.node;
+        while (text.length < 24 && walker.nextNode()) {
+          if (walker.currentNode.parentElement.closest('rt, script, style')) continue;
+          text += walker.currentNode.data;
+        }
+        const block = hit.node.parentElement.closest('li, p, td, summary, div');
+        const sentence = block ? block.innerText.replace(/\\s+/g, ' ').slice(0, 200) : '';
+        document.querySelectorAll('.tapped').forEach(n => n.classList.remove('tapped'));
+        hit.node.parentElement.classList.add('tapped');
+        location.href = 'kotoba://lookup?t=' + encodeURIComponent(text.slice(0, 24)) + '&s=' + encodeURIComponent(sentence);
+      });
+    })();
+    """
+
     private static let baseCSS = """
     :root { color-scheme: light dark; --fg:#1b1b1d; --muted:#7a7a80; --rule:#d9d9de; --accent:#c2410c; --bg:transparent; }
     @media (prefers-color-scheme: dark) { :root { --fg:#f2f2f4; --muted:#8e8e93; --rule:#3a3a3c; --accent:#fb923c; } }
@@ -121,5 +159,6 @@ enum ResultsPage {
     a { color:var(--accent); text-decoration:none; }
     .gloss rt { font-size:.55em; }
     .sc-image { color:var(--muted); font-size:.85em; }
+    .tapped { background: color-mix(in srgb, var(--accent) 18%, transparent); border-radius:3px; }
     """
 }

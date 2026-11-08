@@ -77,7 +77,10 @@ struct CameraView: View {
                 showingResults = !result.direct.isEmpty || !result.byMeaning.isEmpty
             }
             .sheet(isPresented: $showingResults) {
-                CameraResultsSheet(outcome: outcome, query: selection, onOpenInSearch: { onLookup(selection) })
+                CameraResultsSheet(outcome: outcome, query: selection, onOpenInSearch: { text in
+                    showingResults = false
+                    onLookup(text)
+                })
                     .presentationDetents([.fraction(0.4), .large])
                     .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.4)))
                     .presentationDragIndicator(.visible)
@@ -93,27 +96,19 @@ struct CameraView: View {
 }
 
 private struct CameraResultsSheet: View {
-    @Environment(AppModel.self) private var model
     let outcome: AppModel.SearchOutcome
     let query: String
-    let onOpenInSearch: () -> Void
+    let onOpenInSearch: (String) -> Void
+    @State private var path: [Lookup] = []
 
     var body: some View {
-        NavigationStack {
-            ResultsWebView(html: ResultsPage.html(outcome: outcome, query: query, stylesheets: model.stylesheets,
-                                                  indexStatus: nil, mined: model.settings.mined,
-                                                  canMine: model.settings.ankiFormat != nil)) { url in
-                let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-                func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
-                if url.host == "mine", let s = value("s"), let i = value("i").flatMap(Int.init), let g = outcome.group(section: s, index: i) {
-                    model.mine(g, sentence: outcome.sentence)
-                } else if url.host == "search", let q = value("q") {
-                    model.pendingQuery = q
-                    onOpenInSearch()
+        NavigationStack(path: $path) {
+            ResultsPane(outcome: outcome, query: query, onLookup: { path.append($0) }, onSearch: onOpenInSearch)
+                .navigationDestination(for: Lookup.self) { lookup in
+                    LookupPage(lookup: lookup, onLookup: { path.append($0) }, onSearch: onOpenInSearch)
                 }
-            }
-            .navigationTitle(query)
-            .navigationBarTitleDisplayMode(.inline)
+                .navigationTitle(outcome.direct.first?.matchedText ?? query)
+                .navigationBarTitleDisplayMode(.inline)
         }
     }
 }

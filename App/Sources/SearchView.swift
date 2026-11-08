@@ -5,32 +5,18 @@ struct SearchView: View {
     @Environment(AppModel.self) private var model
     @State private var query = ""
     @State private var outcome = AppModel.SearchOutcome()
+    @State private var path: [Lookup] = []
 
-    private var page: String {
-        ResultsPage.html(outcome: outcome, query: query, stylesheets: model.stylesheets,
-                         indexStatus: model.reverseIndexStatus, mined: model.settings.mined,
-                         canMine: model.settings.ankiFormat != nil)
-    }
-
-    private func handle(_ url: URL) {
-        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
-        switch url.host {
-        case "search":
-            if let q = value("q") { query = q }
-        case "mine":
-            if let section = value("s"), let i = value("i").flatMap(Int.init), let group = outcome.group(section: section, index: i) {
-                model.mine(group, sentence: outcome.sentence)
-            }
-        default:
-            break
-        }
+    private func search(_ text: String) {
+        path = []
+        query = text
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ZStack {
-                ResultsWebView(html: page, onAction: handle)
+                ResultsPane(outcome: outcome, query: query, indexStatus: model.reverseIndexStatus,
+                            onLookup: { path.append($0) }, onSearch: search)
                     .ignoresSafeArea(edges: .bottom)
                 if model.dictionaries.isEmpty {
                     ContentUnavailableView("Nessun dizionario",
@@ -40,6 +26,9 @@ struct SearchView: View {
                     ContentUnavailableView.search(text: query)
                 }
             }
+            .navigationDestination(for: Lookup.self) { lookup in
+                LookupPage(lookup: lookup, onLookup: { path.append($0) }, onSearch: search)
+            }
             .navigationTitle("Cerca")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "日本語 · italiano · English · romaji")
@@ -47,7 +36,7 @@ struct SearchView: View {
             .autocorrectionDisabled()
             .onChange(of: model.pendingQuery) { _, newValue in
                 if let newValue {
-                    query = newValue
+                    search(newValue)
                     model.pendingQuery = nil
                 }
             }
