@@ -121,9 +121,16 @@ def tables(stream):
 
 
 def unwrap(row):
-    """Some exports wrap each row ({"key": ..., "value": {...}}): return the record itself."""
-    if isinstance(row, dict) and "value" in row and isinstance(row["value"], dict) and len(row) <= 3:
-        return row["value"]
+    """Return the record itself. Tables without an inline primary key are
+    exported by Dexie as {"$": [key, record], "$types": {...}}; older exports
+    may use {"key": ..., "value": record}."""
+    if isinstance(row, dict):
+        wrapped = row.get("$")
+        if isinstance(wrapped, list) and len(wrapped) == 2 and isinstance(wrapped[1], dict):
+            return wrapped[1]
+        if "value" in row and isinstance(row["value"], dict) and len(row) <= 3:
+            return row["value"]
+        row.pop("$types", None)
     return row
 
 
