@@ -106,6 +106,15 @@ final class SQLiteStatement {
         return self
     }
 
+    /// Binds a list of strings to ?1...?N (for IN (...) clauses).
+    func bindArray(_ values: [String]) {
+        sqlite3_reset(stmt)
+        sqlite3_clear_bindings(stmt)
+        for (offset, v) in values.enumerated() {
+            sqlite3_bind_text(stmt, Int32(offset + 1), v, -1, SQLITE_TRANSIENT)
+        }
+    }
+
     /// Runs a statement that returns no rows.
     func run() throws {
         let rc = sqlite3_step(stmt)

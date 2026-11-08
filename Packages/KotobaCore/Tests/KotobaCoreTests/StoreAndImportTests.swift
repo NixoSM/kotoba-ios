@@ -64,5 +64,27 @@ final class StoreAndImportTests: XCTestCase {
         let json = #"[{"type":"structured-content","content":[{"tag":"ul","content":[{"tag":"li","content":"to eat"},{"tag":"li","content":["to ",{"tag":"ruby","content":["生",{"tag":"rt","content":"せい"}]},"live on"]}]}]}]"#
         XCTAssertEqual(GlossaryText.items(fromJSON: Data(json.utf8)), ["to eat\nto 生live on"])
     }
+
+    func testReverseSearch() throws {
+        let store = try DictionaryStore(path: ":memory:")
+        let files = [
+            "term_bank_1.json": #"[["攻撃","こうげき","n","vs",0,["attack","assault"],1,""],["心臓発作","しんぞうほっさ","n","",0,["heart attack"],2,""],["挨拶","あいさつ","n","",0,["greeting"],3,""]]"#,
+        ]
+        _ = try YomitanImporter.importDictionary(at: try makeZip(title: "EN", files: files), into: store)
+        let hits = store.reverseSearch("attack")
+        XCTAssertEqual(hits.map(\.entry.expression), ["攻撃", "心臓発作"])
+
+        try store.delete(dictionary: try store.dictionaries()[0].id)
+        XCTAssertTrue(store.reverseSearch("attack").isEmpty)
+    }
+
+    func testFrequencyBreaksTies() throws {
+        let store = try DictionaryStore(path: ":memory:")
+        let terms = ["term_bank_1.json": #"[["稀","まれ","n","",0,["rare"],1,""],["珍しい","めずらしい","adj-i","adj-i",0,["rare"],2,""]]"#]
+        let freq = ["term_meta_bank_1.json": #"[["珍しい","freq",500],["稀","freq",{"value":30000,"displayValue":"30000"}]]"#]
+        _ = try YomitanImporter.importDictionary(at: try makeZip(title: "Terms", files: terms), into: store)
+        _ = try YomitanImporter.importDictionary(at: try makeZip(title: "Freq", files: freq), into: store)
+        XCTAssertEqual(store.reverseSearch("rare").map(\.entry.expression), ["珍しい", "稀"])
+    }
 }
 #endif

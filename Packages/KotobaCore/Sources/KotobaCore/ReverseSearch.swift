@@ -1,0 +1,99 @@
+import Foundation
+
+/// Reverse lookup: Italian or English word → Japanese headwords, by searching
+/// the definitions. Matching is done with SQLite full-text search; this file
+/// holds the pure parts: what gets indexed and how hits are ranked.
+public enum ReverseSearch {
+    /// The pieces of a glossary worth indexing: short Latin-script segments.
+    /// Long sentences (usually examples) are left out, so "ciao" finds the
+    /// words that *mean* ciao, not every example that happens to contain it.
+    public static func indexText(fromGlossaryJSON data: Data) -> String {
+        segments(of: GlossaryText.items(fromJSON: data)).joined(separator: "\n")
+    }
+
+    static func segments(of items: [String]) -> [String] {
+        var out: [String] = []
+        for item in items {
+            for line in item.split(separator: "\n") {
+                for part in line.split(whereSeparator: { ";；,，、/／".contains($0) }) {
+                    let s = part.trimmingCharacters(in: .whitespaces)
+                    guard s.count <= 60, s.unicodeScalars.contains(where: isLatinLetter) else { continue }
+                    out.append(s)
+                }
+            }
+        }
+        return out
+    }
+
+    /// Lowercase, no accents, no bracketed notes, no Japanese, no grammar
+    /// placeholders: "(攻めること)Assalto [-chi]" → "assalto".
+    public static func normalize(_ text: String) -> String {
+        var s = text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+        for (open, close) in [("(", ")"), ("[", "]"), ("【", "】"), ("〔", "〕"), ("{", "}")] {
+            while let a = s.range(of: open), let b = s.range(of: close, range: a.upperBound..<s.endIndex) {
+                s.removeSubrange(a.lowerBound..<b.upperBound)
+            }
+        }
+        let kept = s.unicodeScalars.map { isLatinLetter($0) ? Character($0) : " " }
+        let words = String(kept).split(separator: " ").map(String.init)
+            .filter { !placeholders.contains($0) }
+        return words.joined(separator: " ")
+    }
+
+    private static let placeholders: Set<String> = ["qlcu", "ql", "co", "qlco", "qc", "qd", "sb", "sth", "something", "someone", "etc"]
+
+    static func isLatinLetter(_ s: Unicode.Scalar) -> Bool {
+        switch s.value {
+        case 0x41...0x5A, 0x61...0x7A, 0xC0...0x24F: return s.properties.isAlphabetic
+        default: return false
+        }
+    }
+
+    /// How well an indexed text answers the query. 0 means "not a real match".
+    public static func score(query: String, indexText: String) -> Int {
+        let q = normalize(query)
+        guard !q.isEmpty else { return 0 }
+        let qWords = Set(q.split(separator: " "))
+        var best = 0
+        for (position, raw) in indexText.split(separator: "\n").enumerated() {
+            var s = normalize(String(raw))
+            if s.hasPrefix("to ") { s.removeFirst(3) } // English infinitive: "to eat" == "eat"
+            let positionPenalty = min(position, 10)
+            var value = 0
+            if s == q {
+                value = 100
+            } else {
+                let words = s.split(separator: " ")
+                if qWords.isSubset(of: Set(words)) {
+                    // All query words present: shorter segments are closer meanings.
+                    value = max(60 - (words.count - qWords.count) * 6, 20)
+                }
+            }
+            if value > 0 { best = max(best, value - positionPenalty) }
+        }
+        return best
+    }
+
+    /// FTS5 query: every word must appear; the last one may be a prefix while typing.
+    public static func ftsQuery(for text: String) -> String? {
+        let words = normalize(text).split(separator: " ").map(String.init)
+        guard !words.isEmpty else { return nil }
+        return words.enumerated().map { i, w in
+            let quoted = "\"" + w.replacingOccurrences(of: "\"", with: "") + "\""
+            return i == words.count - 1 && w.count >= 3 ? quoted + "*" : quoted
+        }.joined(separator: " ")
+    }
+
+    /// Reads a Yomitan frequency value: a number, {value}, or {reading, frequency}.
+    public static func frequencyValue(_ json: Any) -> Double? {
+        switch json {
+        case let n as NSNumber: return n.doubleValue
+        case let s as String: return Double(s.split(separator: " ").first ?? "")
+        case let o as [String: Any]:
+            if let f = o["frequency"] { return frequencyValue(f) }
+            if let v = o["value"] { return frequencyValue(v) }
+            return nil
+        default: return nil
+        }
+    }
+}

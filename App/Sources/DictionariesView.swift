@@ -12,6 +12,14 @@ struct DictionariesView: View {
                 if let status = model.importStatus {
                     Section { ImportStatusRow(status: status) }
                 }
+                if let status = model.reverseIndexStatus {
+                    Section {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ProgressView()
+                            Text(status).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
                 Section {
                     ForEach(model.dictionaries) { dict in
                         Toggle(isOn: Binding(get: { dict.enabled }, set: { model.setEnabled($0, for: dict) })) {

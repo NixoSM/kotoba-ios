@@ -11,7 +11,7 @@ struct HeadwordGroup: Identifiable {
     let reasons: [Reason]
     var definitions: [(dictionary: String, items: [String])]
 
-    static func group(_ results: [LookupResult]) -> [HeadwordGroup] {
+    static func group(_ results: [(entry: TermEntry, matchedText: String, reasons: [Reason])]) -> [HeadwordGroup] {
         var order: [String] = []
         var groups: [String: HeadwordGroup] = [:]
         for r in results {
@@ -20,7 +20,7 @@ struct HeadwordGroup: Identifiable {
             if groups[key] == nil {
                 order.append(key)
                 groups[key] = HeadwordGroup(id: key, expression: r.entry.expression, reading: r.entry.reading,
-                                            matchedText: r.matchedText, reasons: r.deinflection.reasons, definitions: [])
+                                            matchedText: r.matchedText, reasons: r.reasons, definitions: [])
             }
             if let i = groups[key]!.definitions.firstIndex(where: { $0.dictionary == r.entry.dictionary }) {
                 groups[key]!.definitions[i].items += items
@@ -32,10 +32,16 @@ struct HeadwordGroup: Identifiable {
     }
 }
 
+extension LookupResult {
+    var groupInput: (entry: TermEntry, matchedText: String, reasons: [Reason]) {
+        (entry, matchedText, deinflection.reasons)
+    }
+}
+
 struct SearchView: View {
     @Environment(AppModel.self) private var model
     @State private var query = ""
-    @State private var groups: [HeadwordGroup] = []
+    @State private var outcome = AppModel.SearchOutcome()
 
     var body: some View {
         NavigationStack {
@@ -45,10 +51,20 @@ struct SearchView: View {
                         ContentUnavailableView("Nessun dizionario",
                                                systemImage: "square.stack.3d.up.slash",
                                                description: Text("Importa un dizionario Yomitan (.zip) dalla scheda Dizionari."))
-                    } else if !query.isEmpty && groups.isEmpty {
+                    } else if !query.isEmpty && outcome.direct.isEmpty && outcome.byMeaning.isEmpty {
                         ContentUnavailableView.search(text: query)
                     }
-                    ForEach(groups) { HeadwordCard(group: $0) }
+                    if let reading = outcome.romajiReading, !outcome.direct.isEmpty {
+                        SectionLabel(text: "Letto come \(reading)")
+                    }
+                    ForEach(outcome.direct) { HeadwordCard(group: $0) }
+                    if !outcome.byMeaning.isEmpty {
+                        SectionLabel(text: "Parole che significano «\(query.trimmingCharacters(in: .whitespaces))»")
+                        if let status = model.reverseIndexStatus {
+                            Text(status).font(.caption).foregroundStyle(.secondary)
+                        }
+                        ForEach(outcome.byMeaning) { HeadwordCard(group: $0) }
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
@@ -61,7 +77,7 @@ struct SearchView: View {
                 // Small pause so we don't search on every keystroke.
                 try? await Task.sleep(for: .milliseconds(120))
                 guard !Task.isCancelled else { return }
-                groups = HeadwordGroup.group(await model.search(query))
+                outcome = await model.search(query)
             }
         }
     }
@@ -106,5 +122,16 @@ struct HeadwordCard: View {
             }
         }
         .textSelection(.enabled)
+    }
+}
+
+private struct SectionLabel: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.top, 4)
     }
 }
