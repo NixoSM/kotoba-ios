@@ -35,6 +35,7 @@ final class AppModel {
             store = nil
             errorMessage = "Impossibile aprire il database: \(error)"
         }
+        MediaSchemeHandler.store = store
         refresh()
         buildMissingReverseIndexes()
     }

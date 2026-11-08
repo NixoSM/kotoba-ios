@@ -22,7 +22,8 @@ struct HeadwordGroup: Identifiable, Sendable {
         var groups: [String: HeadwordGroup] = [:]
         for r in results {
             let key = r.entry.expression + "|" + r.entry.reading
-            let items = GlossaryHTML.items(fromJSON: r.entry.glossaryJSON)
+            let dictionary = r.entry.dictionary
+            let items = GlossaryHTML.items(fromJSON: r.entry.glossaryJSON) { MediaSchemeHandler.url(dictionary: dictionary, path: $0) }
             if groups[key] == nil {
                 order.append(key)
                 groups[key] = HeadwordGroup(id: key, expression: r.entry.expression, reading: r.entry.reading,

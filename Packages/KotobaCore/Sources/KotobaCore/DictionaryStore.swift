@@ -24,7 +24,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     private let db: SQLiteDatabase
     private let lock = NSLock()
 
-    public static let schemaVersion = 3
+    public static let schemaVersion = 4
 
     /// Pass `":memory:"` for a throwaway store (tests).
     public init(path: String) throws {
@@ -85,6 +85,17 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         if version < 3 {
             // v3: dictionary stylesheets (styles.css inside the zip).
             try db.execute("ALTER TABLE dictionaries ADD COLUMN styles TEXT NOT NULL DEFAULT ''")
+        }
+        if version < 4 {
+            // v4: images and other files bundled in dictionaries.
+            try db.execute("""
+            CREATE TABLE IF NOT EXISTS media (
+                dict_id INTEGER NOT NULL REFERENCES dictionaries(id) ON DELETE CASCADE,
+                path TEXT NOT NULL,
+                data BLOB NOT NULL,
+                PRIMARY KEY (dict_id, path)
+            ) WITHOUT ROWID;
+            """)
         }
         try db.execute("PRAGMA user_version = \(Self.schemaVersion)")
     }
@@ -152,6 +163,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         private let insertTerm: SQLiteStatement
         private let insertMeta: SQLiteStatement
         private let insertFTS: SQLiteStatement
+        private let insertMedia: SQLiteStatement
         public private(set) var termCount = 0
         public private(set) var metaCount = 0
 
@@ -164,6 +176,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
             """)
             insertMeta = try db.prepare("INSERT INTO term_meta (dict_id, expression, kind, data) VALUES (?1, ?2, ?3, ?4)")
             insertFTS = try db.prepare("INSERT INTO gloss_fts (rowid, text) VALUES (?1, ?2)")
+            insertMedia = try db.prepare("INSERT OR REPLACE INTO media (dict_id, path, data) VALUES (?1, ?2, ?3)")
         }
 
         public func add(_ terms: [TermEntry]) throws {
@@ -175,6 +188,10 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
                 if !text.isEmpty { try insertFTS.bind(db.lastInsertRowID, text).run() }
             }
             termCount += terms.count
+        }
+
+        public func addMedia(path: String, data: Data) throws {
+            try insertMedia.bind(dictID, path, data).run()
         }
 
         public func add(_ meta: [TermMetaEntry]) throws {
@@ -391,6 +408,17 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
             WHERE d.enabled = 1 AND EXISTS (SELECT 1 FROM term_meta m WHERE m.dict_id = d.id AND m.kind = 'freq')
             ORDER BY d.priority
             """).rows { out.append($0.string(0)) }
+            return out
+        }
+    }
+
+    /// A file bundled with a dictionary (usually an image used in definitions).
+    public func media(dictionary: String, path: String) -> Data? {
+        locked {
+            var out: Data?
+            try? db.prepare("""
+            SELECT m.data FROM media m JOIN dictionaries d ON d.id = m.dict_id WHERE d.title = ?1 AND m.path = ?2
+            """).bind(dictionary, path).rows { out = $0.data(0) }
             return out
         }
     }

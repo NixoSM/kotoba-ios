@@ -33,8 +33,10 @@ public enum YomitanImporter {
             .filter { isBank($0, prefix: "term_bank_") || isBank($0, prefix: "term_meta_bank_") }
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
 
-        var report = ImportProgress(dictionaryTitle: index.title, banksDone: 0, banksTotal: banks.count)
+        var report = ImportProgress(dictionaryTitle: index.title, banksDone: 0, banksTotal: banks.count + (mediaPaths.isEmpty ? 0 : 1))
         progress(report)
+
+        let mediaPaths = archive.filter { $0.type == .file }.map(\.path).filter(isMedia)
 
         var styles = ""
         if let cssEntry = archive["styles.css"] {
@@ -56,7 +58,21 @@ public enum YomitanImporter {
                 report.banksDone += 1
                 progress(report)
             }
+            for path in mediaPaths {
+                guard let entry = archive[path] else { continue }
+                try session.addMedia(path: path, data: read(entry, from: archive))
+            }
+            if !mediaPaths.isEmpty {
+                report.banksDone += 1
+                progress(report)
+            }
         }
+    }
+
+    private static let mediaExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp", "tif", "tiff"]
+
+    private static func isMedia(_ path: String) -> Bool {
+        mediaExtensions.contains((path as NSString).pathExtension.lowercased())
     }
 
     private static func isBank(_ path: String, prefix: String) -> Bool {

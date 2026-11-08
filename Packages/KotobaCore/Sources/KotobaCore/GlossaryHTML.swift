@@ -4,14 +4,25 @@ import Foundation
 /// structure: lists, tables, ruby, collapsible <details>, and the `data-sc-*`
 /// attributes that dictionary stylesheets (styles.css) target.
 public enum GlossaryHTML {
-    /// One HTML fragment per glossary item.
-    public static func items(fromJSON data: Data) -> [String] {
+    /// One HTML fragment per glossary item. `mediaURL` turns an image path
+    /// from the dictionary into a URL the web view can load; without it,
+    /// images show their description.
+    public static func items(fromJSON data: Data, mediaURL: ((String) -> String)? = nil) -> [String] {
         guard let array = (try? JSONSerialization.jsonObject(with: data)) as? [Any] else { return [] }
         return array.map { item in
-            var out = ""
-            render(item, into: &out)
-            return out
+            var r = Renderer(mediaURL: mediaURL)
+            r.render(item)
+            return r.out
         }.filter { !$0.isEmpty }
+    }
+
+    private struct Renderer {
+        let mediaURL: ((String) -> String)?
+        var out = ""
+
+        mutating func render(_ node: Any) {
+            GlossaryHTML.render(node, into: &out, media: mediaURL)
+        }
     }
 
     private static let allowedTags: Set<String> = [
@@ -19,32 +30,32 @@ public enum GlossaryHTML {
         "span", "div", "ol", "ul", "li", "details", "summary", "br", "a", "img",
     ]
 
-    private static func render(_ node: Any, into out: inout String) {
+    fileprivate static func render(_ node: Any, into out: inout String, media: ((String) -> String)?) {
         switch node {
         case let s as String:
             out += escape(s).replacingOccurrences(of: "\n", with: "<br>")
         case let array as [Any]:
-            array.forEach { render($0, into: &out) }
+            array.forEach { render($0, into: &out, media: media) }
         case let object as [String: Any]:
             if let type = object["type"] as? String {
                 switch type {
                 case "text": out += escape(object["text"] as? String ?? ""); return
-                case "structured-content": render(object["content"] ?? "", into: &out); return
-                case "image": renderImage(object, into: &out); return
+                case "structured-content": render(object["content"] ?? "", into: &out, media: media); return
+                case "image": renderImage(object, into: &out, media: media); return
                 default: break
                 }
             }
             guard let tag = object["tag"] as? String, allowedTags.contains(tag) else {
-                if let content = object["content"] { render(content, into: &out) }
+                if let content = object["content"] { render(content, into: &out, media: media) }
                 return
             }
             switch tag {
             case "br": out += "<br>"
-            case "img": renderImage(object, into: &out)
-            case "a": renderLink(object, into: &out)
+            case "img": renderImage(object, into: &out, media: media)
+            case "a": renderLink(object, into: &out, media: media)
             default:
                 out += "<\(tag)\(attributes(object))>"
-                if let content = object["content"] { render(content, into: &out) }
+                if let content = object["content"] { render(content, into: &out, media: media) }
                 out += "</\(tag)>"
             }
         default:
@@ -54,12 +65,21 @@ public enum GlossaryHTML {
 
     /// Images are stored in the dictionary zip; until media import exists we
     /// show their description instead of a broken picture.
-    private static func renderImage(_ object: [String: Any], into out: inout String) {
+    private static func renderImage(_ object: [String: Any], into out: inout String, media: ((String) -> String)?) {
         let label = (object["title"] as? String) ?? (object["alt"] as? String) ?? (object["description"] as? String) ?? "immagine"
-        out += "<span class=\"sc-image\">[\(escape(label))]</span>"
+        guard let media, let path = object["path"] as? String else {
+            out += "<span class=\"sc-image\">[\(escape(label))]</span>"
+            return
+        }
+        let units = (object["sizeUnits"] as? String) == "em" ? "em" : "px"
+        var style = ""
+        if let w = (object["preferredWidth"] ?? object["width"]) as? NSNumber { style += "width:\(w)\(units);" }
+        if let h = (object["preferredHeight"] ?? object["height"]) as? NSNumber, style.isEmpty { style += "height:\(h)\(units);" }
+        if (object["verticalAlign"] as? String) != nil || units == "em" { style += "vertical-align:middle;" }
+        out += "<img class=\"sc-img\" src=\"\(escape(media(path)))\" alt=\"\(escape(label))\" style=\"\(style)max-width:100%\">"
     }
 
-    private static func renderLink(_ object: [String: Any], into out: inout String) {
+    private static func renderLink(_ object: [String: Any], into out: inout String, media: ((String) -> String)?) {
         let href = object["href"] as? String ?? ""
         // "?query=…" links point to another dictionary entry: route them to our own search.
         var target = href
@@ -69,7 +89,7 @@ public enum GlossaryHTML {
             target = ""
         }
         out += target.isEmpty ? "<span>" : "<a href=\"\(escape(target))\">"
-        if let content = object["content"] { render(content, into: &out) }
+        if let content = object["content"] { render(content, into: &out, media: media) }
         out += target.isEmpty ? "</span>" : "</a>"
     }
 

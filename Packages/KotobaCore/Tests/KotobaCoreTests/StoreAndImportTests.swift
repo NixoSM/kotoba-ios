@@ -86,5 +86,19 @@ final class StoreAndImportTests: XCTestCase {
         _ = try YomitanImporter.importDictionary(at: try makeZip(title: "Freq", files: freq), into: store)
         XCTAssertEqual(store.reverseSearch("rare").map(\.entry.expression), ["珍しい", "稀"])
     }
+
+    func testMediaImportAndRendering() throws {
+        let store = try DictionaryStore(path: ":memory:")
+        let files = [
+            "term_bank_1.json": #"[["鳥","とり","n","",0,[{"type":"structured-content","content":{"tag":"img","path":"img/bird.png","width":2,"height":2,"sizeUnits":"em","title":"bird"}}],1,""]]"#,
+            "img/bird.png": "PNGDATA",
+        ]
+        _ = try YomitanImporter.importDictionary(at: try makeZip(title: "Pics", files: files), into: store)
+        XCTAssertEqual(store.media(dictionary: "Pics", path: "img/bird.png"), Data("PNGDATA".utf8))
+        let entry = try XCTUnwrap(store.entries(matching: "鳥").first)
+        let html = GlossaryHTML.items(fromJSON: entry.glossaryJSON) { "m://" + $0 }.first ?? ""
+        XCTAssertTrue(html.contains(#"src="m://img/bird.png""#), html)
+        XCTAssertTrue(html.contains("width:2em"), html)
+    }
 }
 #endif
