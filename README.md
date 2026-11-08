@@ -17,7 +17,9 @@ Stato: **0.2** — import di dizionari Yomitan (.zip), ordine e attivazione dei 
 
 Una tantum:
 
-1. Installa **iTunes** e **iCloud** scaricandoli dal sito Apple (non dal Microsoft Store: Sideloadly richiede le versioni "web").
+1. Installa **iTunes** e **iCloud** nelle versioni non-Microsoft Store (se hai quelle dello Store, disinstallale prima), poi riavvia:
+   - iTunes: https://www.apple.com/itunes/download/win64
+   - iCloud: https://updates.cdn-apple.com/2020/windows/001-39935-20200911-1A70AA56-F448-11EA-8CC0-99D41950005E/iCloudSetup.exe
 2. Installa **Sideloadly** da https://sideloadly.io.
 3. Consigliato: crea un **Apple ID secondario** da usare solo per questo. Sideloadly è un programma di terzi e gli dai la password dell'Apple ID.
 
