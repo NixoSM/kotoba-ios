@@ -345,6 +345,56 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         }
     }
 
+    /// Frequencies and pitch accents for a set of words, from enabled
+    /// dictionaries, in dictionary priority order.
+    public struct MetaBundle: Sendable {
+        public var frequencies: [String: [FrequencyInfo]] = [:]
+        public var pitches: [String: [PitchInfo]] = [:]
+    }
+
+    public func termMeta(for expressions: [String]) -> MetaBundle {
+        guard !expressions.isEmpty else { return MetaBundle() }
+        return locked {
+            var bundle = MetaBundle()
+            let placeholders = Array(repeating: "?", count: expressions.count).joined(separator: ",")
+            do {
+                let stmt = try db.prepare("""
+                SELECT m.expression, m.kind, m.data, d.title
+                FROM term_meta m JOIN dictionaries d ON d.id = m.dict_id
+                WHERE d.enabled = 1 AND m.kind IN ('freq', 'pitch') AND m.expression IN (\(placeholders))
+                ORDER BY d.priority, m.id
+                """)
+                stmt.bindArray(expressions)
+                try stmt.rows { r in
+                    guard let wrapped = (try? JSONSerialization.jsonObject(with: r.data(2))) as? [Any],
+                          let json = wrapped.first else { return }
+                    let expression = r.string(0), title = r.string(3)
+                    if r.string(1) == "freq" {
+                        if let f = TermMetaParser.frequency(json, dictionary: title) { bundle.frequencies[expression, default: []].append(f) }
+                    } else if let p = TermMetaParser.pitch(json, dictionary: title) {
+                        bundle.pitches[expression, default: []].append(p)
+                    }
+                }
+            } catch {
+                return MetaBundle()
+            }
+            return bundle
+        }
+    }
+
+    /// Titles of enabled dictionaries that contain frequency data, in priority order.
+    public func frequencyDictionaries() -> [String] {
+        locked {
+            var out: [String] = []
+            try? db.prepare("""
+            SELECT d.title FROM dictionaries d
+            WHERE d.enabled = 1 AND EXISTS (SELECT 1 FROM term_meta m WHERE m.dict_id = d.id AND m.kind = 'freq')
+            ORDER BY d.priority
+            """).rows { out.append($0.string(0)) }
+            return out
+        }
+    }
+
     // MARK: Lookup
 
     public func entries(matching term: String) -> [TermEntry] {
