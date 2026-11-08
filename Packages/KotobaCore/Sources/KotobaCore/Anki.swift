@@ -31,6 +31,18 @@ public struct AnkiNoteFormat: Codable, Hashable, Sendable {
     ])
 }
 
+/// One dictionary entry for the word (in JMdict, one sense), with its tags.
+public struct MiningSense: Sendable, Hashable {
+    public var dictionary: String
+    public var tags: [String]
+    public var html: [String]
+    public init(dictionary: String, tags: [String], html: [String]) {
+        self.dictionary = dictionary
+        self.tags = tags
+        self.html = html
+    }
+}
+
 /// What we know about the word being mined.
 public struct MiningContext: Sendable {
     public var expression: String
@@ -43,10 +55,13 @@ public struct MiningContext: Sendable {
     public var frequencies: [FrequencyInfo]
     public var pitches: [PitchInfo]
     public var partsOfSpeech: [String]
+    /// Entry by entry, as Yomitan builds {glossary}. Falls back to `definitions`.
+    public var senses: [MiningSense]
 
     public init(expression: String, reading: String, sentence: String, matchedText: String, reasons: [Reason],
                 definitions: [(dictionary: String, html: [String])], frequencies: [FrequencyInfo],
-                pitches: [PitchInfo], partsOfSpeech: [String]) {
+                pitches: [PitchInfo], partsOfSpeech: [String], senses: [MiningSense] = []) {
+        self.senses = senses.isEmpty ? definitions.map { MiningSense(dictionary: $0.dictionary, tags: [], html: $0.html) } : senses
         self.expression = expression
         self.reading = reading
         self.sentence = sentence
@@ -97,8 +112,8 @@ public enum AnkiFieldRenderer {
     private static func value(of name: String, _ c: MiningContext) -> String {
         if name.hasPrefix("single-glossary-") {
             let wanted = name.dropFirst("single-glossary-".count).lowercased()
-            let defs = c.definitions.filter { slug($0.dictionary) == wanted || $0.dictionary.lowercased() == wanted }
-            return glossary(defs, withNames: false)
+            let senses = c.senses.filter { slug($0.dictionary) == wanted || $0.dictionary.lowercased() == wanted }
+            return yomitanGlossary(senses, dictionaryTag: false)
         }
         return markers[name]?(c) ?? ""
     }
@@ -112,11 +127,11 @@ public enum AnkiFieldRenderer {
         "reading": { $0.reading },
         "furigana": { Furigana.html(expression: $0.expression, reading: $0.reading) },
         "furigana-plain": { Furigana.ankiPlain(expression: $0.expression, reading: $0.reading) },
-        "glossary": { glossary($0.definitions, withNames: true) },
-        "glossary-no-dictionary": { glossary($0.definitions, withNames: false) },
-        "glossary-first": { glossary(Array($0.definitions.prefix(1)), withNames: false) },
-        "glossary-brief": { glossary($0.definitions, withNames: false) },
-        "glossary-first-brief": { glossary(Array($0.definitions.prefix(1)), withNames: false) },
+        "glossary": { yomitanGlossary($0.senses) },
+        "glossary-no-dictionary": { yomitanGlossary($0.senses, dictionaryTag: false) },
+        "glossary-first": { yomitanGlossary(firstDictionary($0.senses)) },
+        "glossary-brief": { yomitanGlossary($0.senses, brief: true) },
+        "glossary-first-brief": { yomitanGlossary(firstDictionary($0.senses), brief: true) },
         "sentence": { GlossaryHTML.escape($0.sentence) },
         "cloze-prefix": { cloze($0).prefix },
         "cloze-body": { cloze($0).body },
@@ -147,6 +162,41 @@ public enum AnkiFieldRenderer {
         guard !values.isEmpty else { return "9999999" }
         let mean = Double(values.count) / values.reduce(0) { $0 + 1 / $1 }
         return String(Int(mean.rounded()))
+    }
+
+    private static func firstDictionary(_ senses: [MiningSense]) -> [MiningSense] {
+        guard let first = senses.first?.dictionary else { return [] }
+        return senses.filter { $0.dictionary == first }
+    }
+
+    /// The same HTML Yomitan's default {glossary} produces (compact tags on), so
+    /// note types written for Yomitan (Animecards, Lapis…) style it as usual:
+    /// <div style="text-align: left;" class="yomitan-glossary"><ol><li data-dictionary="…"><i>(n, uk, JMdict)</i> <ul><li>…</li></ul></li>…</ol></div>
+    public static func yomitanGlossary(_ senses: [MiningSense], dictionaryTag: Bool = true, brief: Bool = false) -> String {
+        guard !senses.isEmpty else { return "" }
+        var previousDictionary: String?
+        var previousTags: [String]?
+        var items: [(dictionary: String, html: String)] = []
+        for sense in senses {
+            var labels: [String] = []
+            if !brief {
+                if sense.tags != previousTags || sense.dictionary != previousDictionary { labels += sense.tags }
+                if dictionaryTag && sense.dictionary != previousDictionary { labels.append(sense.dictionary) }
+            }
+            var html = labels.isEmpty ? "" : "<i>(" + labels.map(GlossaryHTML.escape).joined(separator: ", ") + ")</i> "
+            if sense.html.count <= 1 {
+                html += sense.html.first ?? ""
+            } else {
+                html += "<ul>" + sense.html.map { "<li>\($0)</li>" }.joined() + "</ul>"
+            }
+            items.append((sense.dictionary, html))
+            previousDictionary = sense.dictionary
+            previousTags = sense.tags
+        }
+        let body = items.count == 1
+            ? items[0].html
+            : "<ol>" + items.map { "<li data-dictionary=\"\(GlossaryHTML.escape($0.dictionary))\">\($0.html)</li>" }.joined() + "</ol>"
+        return "<div style=\"text-align: left;\" class=\"yomitan-glossary\">\(body)</div>"
     }
 
     static func glossary(_ defs: [(dictionary: String, html: [String])], withNames: Bool) -> String {

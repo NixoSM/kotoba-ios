@@ -39,7 +39,13 @@ final class AnkiAndMetaTests: XCTestCase {
     func testTemplates() {
         XCTAssertEqual(AnkiFieldRenderer.render("{cloze-prefix}<b>{cloze-body}</b>{cloze-suffix}", context),
                        "昨日は何も<b>食べなかった</b>。")
-        XCTAssertEqual(AnkiFieldRenderer.render("{glossary}", context), "<div><i>(JMdict)</i> to eat</div>")
+        XCTAssertEqual(AnkiFieldRenderer.render("{glossary}", context),
+                       #"<div style="text-align: left;" class="yomitan-glossary"><i>(JMdict)</i> to eat</div>"#)
+        let senses = [MiningSense(dictionary: "JMdict", tags: ["n", "uk"], html: ["lizard"]),
+                      MiningSense(dictionary: "JMdict", tags: ["uk"], html: ["skink", "skink lizard"]),
+                      MiningSense(dictionary: "和伊", tags: [], html: ["lucertola"])]
+        XCTAssertEqual(AnkiFieldRenderer.yomitanGlossary(senses),
+                       #"<div style="text-align: left;" class="yomitan-glossary"><ol><li data-dictionary="JMdict"><i>(n, uk, JMdict)</i> lizard</li><li data-dictionary="JMdict"><i>(uk)</i> <ul><li>skink</li><li>skink lizard</li></ul></li><li data-dictionary="和伊"><i>(和伊)</i> lucertola</li></ol></div>"#)
         XCTAssertEqual(AnkiFieldRenderer.render("{expression}/{audio}", context), "食べる/")
         let format = AnkiNoteFormat(deck: "D", model: "M", fields: [.init(name: "Audio", template: "{audio}"), .init(name: "W", template: "{expression}")])
         XCTAssertEqual(AnkiFieldRenderer.unsupportedMarkers(in: format), ["audio"])

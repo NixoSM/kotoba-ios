@@ -12,6 +12,8 @@ struct HeadwordGroup: Identifiable, Sendable {
     var partsOfSpeech: [String] = []
     /// HTML fragments per dictionary, in dictionary priority order.
     var definitions: [(dictionary: String, items: [String])] = []
+    /// Entry by entry with its tags, for Anki's {glossary}.
+    var senses: [MiningSense] = []
     var frequencies: [FrequencyInfo] = []
     var pitches: [PitchInfo] = []
     /// Value from the sort dictionary; lower = more common.
@@ -33,6 +35,7 @@ struct HeadwordGroup: Identifiable, Sendable {
             for tag in r.entry.definitionTags where !groups[key]!.partsOfSpeech.contains(tag) {
                 groups[key]!.partsOfSpeech.append(tag)
             }
+            groups[key]!.senses.append(MiningSense(dictionary: dictionary, tags: r.entry.definitionTags, html: items))
             if let i = groups[key]!.definitions.firstIndex(where: { $0.dictionary == r.entry.dictionary }) {
                 groups[key]!.definitions[i].items += items
             } else {
@@ -44,6 +47,10 @@ struct HeadwordGroup: Identifiable, Sendable {
         return order.compactMap { key in
             guard var g = groups[key] else { return nil }
             g.definitions = g.definitions.enumerated().sorted {
+                let (p, q) = (priority[$0.element.dictionary] ?? Int.max, priority[$1.element.dictionary] ?? Int.max)
+                return p != q ? p < q : $0.offset < $1.offset
+            }.map(\.element)
+            g.senses = g.senses.enumerated().sorted {
                 let (p, q) = (priority[$0.element.dictionary] ?? Int.max, priority[$1.element.dictionary] ?? Int.max)
                 return p != q ? p < q : $0.offset < $1.offset
             }.map(\.element)
@@ -98,7 +105,7 @@ struct HeadwordGroup: Identifiable, Sendable {
     func miningContext(sentence: String) -> MiningContext {
         MiningContext(expression: expression, reading: reading, sentence: sentence, matchedText: matchedText,
                       reasons: reasons, definitions: definitions.map { ($0.dictionary, $0.items) },
-                      frequencies: frequencies, pitches: pitches, partsOfSpeech: partsOfSpeech)
+                      frequencies: frequencies, pitches: pitches, partsOfSpeech: partsOfSpeech, senses: senses)
     }
 
     var minedKey: String { expression + "|" + reading }
