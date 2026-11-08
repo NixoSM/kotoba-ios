@@ -120,6 +120,38 @@ def tables(stream):
             yield name, row
 
 
+def unwrap(row):
+    """Some exports wrap each row ({"key": ..., "value": {...}}): return the record itself."""
+    if isinstance(row, dict) and "value" in row and isinstance(row["value"], dict) and len(row) <= 3:
+        return row["value"]
+    return row
+
+
+class Diagnostics:
+    """Writes the first bytes of the export and a sample row of each table to a
+    small text file, so problems with an unexpected format can be fixed remotely."""
+
+    def __init__(self, export_path, folder):
+        os.makedirs(folder, exist_ok=True)
+        self.path = os.path.join(folder, "ispezione.txt")
+        self.samples = {}
+        self.skipped = []
+        with open(export_path, "rb") as f:
+            self.head = f.read(4000).decode("utf-8", errors="replace")
+
+    def sample(self, table, row):
+        if table not in self.samples:
+            self.samples[table] = json.dumps(row, ensure_ascii=False)[:1500]
+
+    def write(self):
+        with open(self.path, "w", encoding="utf-8") as f:
+            f.write("=== inizio del file ===\n" + self.head + "\n\n")
+            for table, text in self.samples.items():
+                f.write(f"=== prima riga di {table} ===\n{text}\n\n")
+            if self.skipped:
+                f.write("=== righe dizionario senza titolo ===\n" + "\n".join(self.skipped) + "\n")
+
+
 def safe_filename(title):
     name = re.sub(r'[\\/:*?"<>|]', "_", title).strip().rstrip(".")
     return name or "dizionario"
@@ -207,9 +239,17 @@ def main():
     last_report = 0.0
     seen_titles = []
 
+    diagnostics = Diagnostics(a.export, out)
     for table, row in tables(stream):
+        row = unwrap(row)
+        diagnostics.sample(table, row)
+        if not isinstance(row, dict):
+            continue
         if table == "dictionaries":
-            title = row.get("title", "?")
+            title = row.get("title")
+            if not title:
+                diagnostics.skipped.append(json.dumps(row, ensure_ascii=False)[:500])
+                continue
             seen_titles.append(title)
             if a.elenco:
                 continue
@@ -235,6 +275,9 @@ def main():
             sys.stdout.write(f"\r  {pct:5.1f}%  tabella {table:<10}  {sum(w.rows for w in writers.values()):>12,} righe")
             sys.stdout.flush()
 
+    diagnostics.write()
+    if diagnostics.skipped:
+        print(f"\nAttenzione: {len(diagnostics.skipped)} righe di dizionario senza titolo sono state saltate (dettagli in {diagnostics.path}).")
     if a.elenco:
         print("Dizionari nell'export:")
         for t in seen_titles:
@@ -242,6 +285,9 @@ def main():
         return
 
     print()
+    if not writers:
+        print("Nessun dizionario riconosciuto nell'export. Ho salvato i dettagli in:", diagnostics.path)
+        return
     for w in writers.values():
         w.close()
         size = os.path.getsize(w.path) / 1024 / 1024
