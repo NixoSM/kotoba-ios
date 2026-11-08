@@ -228,7 +228,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     public func install(index: DictionaryIndex, styles: String = "", _ body: (ImportSession) throws -> Void) throws -> InstalledDictionary {
         try locked {
             frequencyDictionaryCache = nil
-            try db.transaction {
+            return try db.transaction {
                 var exists = false
                 try db.prepare("SELECT 1 FROM dictionaries WHERE title = ?1").bind(index.title).rows { _ in exists = true }
                 if exists { throw DictionaryStoreError.alreadyInstalled(title: index.title) }
