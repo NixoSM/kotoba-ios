@@ -33,6 +33,8 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         PRAGMA journal_mode = WAL;
         PRAGMA synchronous = NORMAL;
         PRAGMA foreign_keys = ON;
+        PRAGMA mmap_size = 268435456;
+        PRAGMA cache_size = -16000;
         CREATE TABLE IF NOT EXISTS dictionaries (
             id INTEGER PRIMARY KEY,
             title TEXT NOT NULL UNIQUE,
@@ -106,6 +108,20 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         return try body()
     }
 
+    /// Prepared once, reused: a lookup runs the same query hundreds of times.
+    /// Call only while holding the lock.
+    private var statementCache: [String: SQLiteStatement] = [:]
+
+    private func cached(_ sql: String) throws -> SQLiteStatement {
+        if let stmt = statementCache[sql] { return stmt }
+        let stmt = try db.prepare(sql)
+        statementCache[sql] = stmt
+        return stmt
+    }
+
+    /// Recomputed after any change to the dictionary list.
+    private var frequencyDictionaryCache: [String]?
+
     // MARK: Dictionaries
 
     public func dictionaries() throws -> [InstalledDictionary] {
@@ -131,12 +147,16 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     }
 
     public func setEnabled(_ enabled: Bool, dictionary id: Int64) throws {
-        try locked { try db.prepare("UPDATE dictionaries SET enabled = ?1 WHERE id = ?2").bind(enabled, id).run() }
+        try locked {
+            frequencyDictionaryCache = nil
+            try db.prepare("UPDATE dictionaries SET enabled = ?1 WHERE id = ?2").bind(enabled, id).run()
+        }
     }
 
     /// Saves a new order: the first id gets the highest priority.
     public func reorder(_ ids: [Int64]) throws {
         try locked {
+            frequencyDictionaryCache = nil
             try db.transaction {
                 let stmt = try db.prepare("UPDATE dictionaries SET priority = ?1 WHERE id = ?2")
                 for (i, id) in ids.enumerated() { try stmt.bind(i, id).run() }
@@ -146,6 +166,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
 
     public func delete(dictionary id: Int64) throws {
         try locked {
+            frequencyDictionaryCache = nil
             try db.transaction {
                 try db.prepare("DELETE FROM gloss_fts WHERE rowid IN (SELECT id FROM terms WHERE dict_id = ?1)").bind(id).run()
                 try db.prepare("DELETE FROM dictionaries WHERE id = ?1").bind(id).run()
@@ -206,6 +227,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     /// nothing is left behind.
     public func install(index: DictionaryIndex, styles: String = "", _ body: (ImportSession) throws -> Void) throws -> InstalledDictionary {
         try locked {
+            frequencyDictionaryCache = nil
             try db.transaction {
                 var exists = false
                 try db.prepare("SELECT 1 FROM dictionaries WHERE title = ?1").bind(index.title).rows { _ in exists = true }
@@ -284,31 +306,34 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
 
     public func reverseSearch(_ text: String, limit: Int = 60) -> [ReverseHit] {
         guard let match = ReverseSearch.ftsQuery(for: text) else { return [] }
+        // 1. Score the matching definitions using the index text alone.
+        let scored: [(id: Int64, score: Int)] = locked {
+            var out: [(id: Int64, score: Int)] = []
+            try? cached("SELECT rowid, text FROM gloss_fts WHERE gloss_fts MATCH ?1 ORDER BY bm25(gloss_fts) LIMIT 2000")
+                .bind(match).rows { r in
+                    let score = ReverseSearch.score(query: text, indexText: r.string(1))
+                    if score > 0 { out.append((r.int64(0), score)) }
+                }
+            return out
+        }
+        let best = scored.enumerated()
+            .sorted { $0.element.score != $1.element.score ? $0.element.score > $1.element.score : $0.offset < $1.offset }
+            .prefix(300).map(\.element)
+        guard !best.isEmpty else { return [] }
+        var scores: [Int64: Int] = [:]
+        for b in best { scores[b.id] = max(scores[b.id] ?? 0, b.score) }
+
+        // 2. Headwords for those definitions, from enabled dictionaries only.
         var hits: [ReverseHit] = locked {
             var out: [ReverseHit] = []
-            do {
-                try db.prepare("""
-                SELECT f.text, t.expression, t.reading, t.rules, t.score, t.definition_tags, t.term_tags, t.sequence, t.glossary, d.title
-                FROM gloss_fts f
-                JOIN terms t ON t.id = f.rowid
-                JOIN dictionaries d ON d.id = t.dict_id
-                WHERE gloss_fts MATCH ?1 AND d.enabled = 1
-                ORDER BY bm25(gloss_fts)
-                LIMIT 600
-                """).bind(match).rows { r in
-                    let score = ReverseSearch.score(query: text, indexText: r.string(0))
-                    guard score > 0 else { return }
-                    out.append(ReverseHit(entry: TermEntry(
-                        expression: r.string(1), reading: r.string(2),
-                        definitionTags: Self.split(r.string(5)),
-                        rules: WordClass(rawValue: UInt16(truncatingIfNeeded: r.int(3))),
-                        score: r.int(4), glossaryJSON: r.data(8),
-                        sequence: r.isNull(7) ? nil : r.int(7),
-                        termTags: Self.split(r.string(6)),
-                        dictionary: r.string(9)), score: score, frequencyRank: nil))
-                }
-            } catch {
-                return []
+            let ids = scores.keys.map(String.init).joined(separator: ",")
+            try? db.prepare("""
+            SELECT \(Self.headerColumns(glossary: false))
+            FROM terms t JOIN dictionaries d ON d.id = t.dict_id
+            WHERE d.enabled = 1 AND t.id IN (\(ids))
+            """).rows { r in
+                let entry = Self.entry(r)
+                out.append(ReverseHit(entry: entry, score: scores[entry.rowID ?? 0] ?? 0, frequencyRank: nil))
             }
             return out
         }
@@ -323,7 +348,13 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
             default: return $0.entry.score > $1.entry.score
             }
         }
-        return Array(hits.prefix(limit))
+        let top = Array(hits.prefix(limit))
+        let full = loadGlossaries(top.map(\.entry))
+        return zip(top, full).map { hit, entry in
+            var hit = hit
+            hit.entry = entry
+            return hit
+        }
     }
 
     /// Frequency rank of each word, from the highest-priority enabled
@@ -402,12 +433,14 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     /// Titles of enabled dictionaries that contain frequency data, in priority order.
     public func frequencyDictionaries() -> [String] {
         locked {
+            if let cachedList = frequencyDictionaryCache { return cachedList }
             var out: [String] = []
             try? db.prepare("""
             SELECT d.title FROM dictionaries d
             WHERE d.enabled = 1 AND EXISTS (SELECT 1 FROM term_meta m WHERE m.dict_id = d.id AND m.kind = 'freq')
             ORDER BY d.priority
             """).rows { out.append($0.string(0)) }
+            frequencyDictionaryCache = out
             return out
         }
     }
@@ -425,30 +458,59 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
 
     // MARK: Lookup
 
-    public func entries(matching term: String) -> [TermEntry] {
+    public func entries(matching term: String) -> [TermEntry] { lookup(term, glossary: true) }
+
+    public func entryHeaders(matching term: String) -> [TermEntry] { lookup(term, glossary: false) }
+
+    public func loadGlossaries(_ entries: [TermEntry]) -> [TermEntry] {
+        let ids = entries.compactMap { $0.glossaryJSON.isEmpty ? $0.rowID : nil }
+        guard !ids.isEmpty else { return entries }
+        var glossaries: [Int64: Data] = [:]
+        _ = locked {
+            try? db.prepare("SELECT id, glossary FROM terms WHERE id IN (\(ids.map(String.init).joined(separator: ",")))")
+                .rows { glossaries[$0.int64(0)] = $0.data(1) }
+        }
+        return entries.map { entry in
+            guard let id = entry.rowID, let glossary = glossaries[id] else { return entry }
+            var filled = entry
+            filled.glossaryJSON = glossary
+            return filled
+        }
+    }
+
+    private func lookup(_ term: String, glossary: Bool) -> [TermEntry] {
         locked {
             var out: [TermEntry] = []
             do {
-                try db.prepare("""
-                SELECT t.expression, t.reading, t.rules, t.score, t.definition_tags, t.term_tags, t.sequence, t.glossary, d.title
+                try cached("""
+                SELECT \(Self.headerColumns(glossary: glossary))
                 FROM terms t JOIN dictionaries d ON d.id = t.dict_id
                 WHERE d.enabled = 1 AND (t.expression = ?1 OR t.reading = ?1)
                 ORDER BY d.priority, t.score DESC
-                """).bind(term).rows { r in
-                    out.append(TermEntry(
-                        expression: r.string(0), reading: r.string(1),
-                        definitionTags: Self.split(r.string(4)),
-                        rules: WordClass(rawValue: UInt16(truncatingIfNeeded: r.int(2))),
-                        score: r.int(3), glossaryJSON: r.data(7),
-                        sequence: r.isNull(6) ? nil : r.int(6),
-                        termTags: Self.split(r.string(5)),
-                        dictionary: r.string(8)))
-                }
+                """).bind(term).rows { out.append(Self.entry($0)) }
             } catch {
                 return []
             }
             return out
         }
+    }
+
+    /// Columns read by `entry(_:)`, in order.
+    private static func headerColumns(glossary: Bool) -> String {
+        "t.expression, t.reading, t.rules, t.score, t.definition_tags, t.term_tags, t.sequence, "
+            + (glossary ? "t.glossary" : "NULL") + ", d.title, t.id"
+    }
+
+    private static func entry(_ r: SQLiteRow) -> TermEntry {
+        TermEntry(
+            expression: r.string(0), reading: r.string(1),
+            definitionTags: Self.split(r.string(4)),
+            rules: WordClass(rawValue: UInt16(truncatingIfNeeded: r.int(2))),
+            score: r.int(3), glossaryJSON: r.data(7),
+            sequence: r.isNull(6) ? nil : r.int(6),
+            termTags: Self.split(r.string(5)),
+            dictionary: r.string(8),
+            rowID: r.int64(9))
     }
 
     private static func split(_ s: String) -> [String] {

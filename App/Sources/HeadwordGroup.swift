@@ -47,12 +47,27 @@ struct HeadwordGroup: Identifiable, Sendable {
         let sortDictionary = sortDictionary ?? store.frequencyDictionaries().first
         for i in groups.indices {
             let reading = Kana.toHiragana(groups[i].reading)
-            groups[i].frequencies = (bundle.frequencies[groups[i].expression] ?? []).filter {
+            groups[i].frequencies = onePerDictionary((bundle.frequencies[groups[i].expression] ?? []).filter {
                 $0.reading == nil || Kana.toHiragana($0.reading!) == reading
-            }
+            })
             groups[i].pitches = (bundle.pitches[groups[i].expression] ?? []).filter { Kana.toHiragana($0.reading) == reading }
             groups[i].sortRank = groups[i].frequencies.first { $0.dictionary == sortDictionary }?.value
         }
+    }
+
+    /// Several frequency lists give two numbers per word: one for the word as
+    /// written, one (marked ㋕) for when it is written in kana. Keep one per
+    /// list, the written form when there is one.
+    static func onePerDictionary(_ list: [FrequencyInfo]) -> [FrequencyInfo] {
+        var out: [FrequencyInfo] = []
+        for f in list {
+            if let i = out.firstIndex(where: { $0.dictionary == f.dictionary }) {
+                if out[i].display.contains("㋕") && !f.display.contains("㋕") { out[i] = f }
+            } else {
+                out.append(f)
+            }
+        }
+        return out
     }
 
     /// Longest match first, then fewer grammar steps, then more common words.

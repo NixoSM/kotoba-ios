@@ -35,6 +35,22 @@ final class StoreAndImportTests: XCTestCase {
         XCTAssertEqual(GlossaryText.items(fromJSON: hits.first!.entry.glossaryJSON), ["to eat"])
     }
 
+    func testScannerReadsDefinitionsOnlyForKeptHeadwords() throws {
+        let store = try DictionaryStore(path: ":memory:")
+        _ = try YomitanImporter.importDictionary(at: try makeZip(title: "Test JMdict", files: jmdict), into: store)
+        let header = try XCTUnwrap(store.entryHeaders(matching: "猫").first)
+        XCTAssertTrue(header.glossaryJSON.isEmpty)
+        XCTAssertNotNil(header.rowID)
+        let filled = store.loadGlossaries([header])
+        XCTAssertEqual(GlossaryText.items(fromJSON: filled[0].glossaryJSON), ["cat"])
+
+        var scanner = TextScanner()
+        scanner.maxHeadwords = 1
+        let hits = scanner.scan("猫食べる", in: store)
+        XCTAssertEqual(hits.map(\.entry.expression), ["猫"])
+        XCTAssertEqual(GlossaryText.items(fromJSON: hits[0].entry.glossaryJSON), ["cat"])
+    }
+
     func testSecondImportOfSameTitleIsRejectedAndLeavesNothing() throws {
         let store = try DictionaryStore(path: ":memory:")
         _ = try YomitanImporter.importDictionary(at: try makeZip(title: "A", files: jmdict), into: store)

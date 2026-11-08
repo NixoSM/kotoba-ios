@@ -6,19 +6,24 @@ import KotobaCore
 enum ResultsPage {
     static func html(outcome: AppModel.SearchOutcome, query: String, stylesheets: [String: String], indexStatus: String?,
                      mined: Set<String>, canMine: Bool) -> String {
-        var body = ""
+        var direct = ""
         if let reading = outcome.romajiReading, !outcome.direct.isEmpty {
-            body += section("Letto come \(reading)")
+            direct += section("Letto come \(reading)")
         }
         for (i, g) in outcome.direct.enumerated() {
-            body += entry(g, link: canMine ? "kotoba://mine?s=direct&i=\(i)" : nil, mined: mined.contains(g.minedKey))
+            direct += entry(g, link: canMine ? "kotoba://mine?s=direct&i=\(i)" : nil, mined: mined.contains(g.minedKey))
         }
+        var meaning = ""
         if !outcome.byMeaning.isEmpty {
-            body += section("Parole che significano «\(query.trimmingCharacters(in: .whitespaces))»")
-            if let indexStatus { body += "<p class=\"note\">\(GlossaryHTML.escape(indexStatus))</p>" }
+            meaning += section("Parole che significano «\(query.trimmingCharacters(in: .whitespaces))»")
+            if let indexStatus { meaning += "<p class=\"note\">\(GlossaryHTML.escape(indexStatus))</p>" }
             for (i, g) in outcome.byMeaning.enumerated() {
-                body += entry(g, link: canMine ? "kotoba://mine?s=meaning&i=\(i)" : nil, mined: mined.contains(g.minedKey))
+                meaning += entry(g, link: canMine ? "kotoba://mine?s=meaning&i=\(i)" : nil, mined: mined.contains(g.minedKey))
             }
+        }
+        var body = outcome.romajiFirst ? direct + meaning : meaning + direct
+        if let ms = outcome.milliseconds, !(outcome.direct.isEmpty && outcome.byMeaning.isEmpty) {
+            body += "<p class=\"timing\">\(outcome.direct.count + outcome.byMeaning.count) parole · \(ms) ms</p>"
         }
         let dictionaryCSS = stylesheets.map { title, css in
             GlossaryHTML.scopedCSS(css, scope: "[data-dict=\"\(scopeID(title))\"]")
@@ -136,6 +141,7 @@ enum ResultsPage {
     body { margin:0; padding:12px 20px 120px; background:var(--bg); color:var(--fg);
            font: 17px/1.45 -apple-system, "Hiragino Sans", sans-serif; }
     .section { font: 600 13px -apple-system; color:var(--muted); margin:18px 0 6px; text-transform:none; }
+    .timing { font: 11px ui-monospace, Menlo, monospace; color:var(--muted); text-align:center; margin:8px 0; }
     .note { font-size:12px; color:var(--muted); margin:0 0 12px; }
     .entry { margin: 0 0 30px; }
     header { position:relative; }

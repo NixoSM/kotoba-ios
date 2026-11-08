@@ -41,7 +41,10 @@ final class ReverseSearchTests: XCTestCase {
 
     func testFTSQuery() {
         XCTAssertEqual(ReverseSearch.ftsQuery(for: "Ciao"), "\"ciao\"*")
-        XCTAssertEqual(ReverseSearch.ftsQuery(for: "to eat"), "\"to\" \"eat\"*")
+        XCTAssertEqual(ReverseSearch.ftsQuery(for: "to eat"), "\"eat\"*")
+        XCTAssertEqual(ReverseSearch.ftsQuery(for: "il dado è tratto"), "\"dado\" \"tratto\"*")
+        XCTAssertEqual(ReverseSearch.ftsQuery(for: "the"), "\"the\"*")
+        XCTAssertEqual(ReverseSearch.score(query: "to run", indexText: "to run"), 100)
         XCTAssertNil(ReverseSearch.ftsQuery(for: "!!"))
     }
 

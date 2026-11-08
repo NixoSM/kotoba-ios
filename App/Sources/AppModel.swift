@@ -55,6 +55,11 @@ final class AppModel {
         var byMeaning: [HeadwordGroup] = []
         /// The text the words were found in, used as the Anki sentence.
         var sentence = ""
+        /// Latin input is usually a meaning ("run"), so the romaji reading
+        /// (るん) only goes first when it is a common word.
+        var romajiFirst = true
+        /// How long the search took, shown at the bottom of the results.
+        var milliseconds: Int?
 
         func group(section: String, index: Int) -> HeadwordGroup? {
             let list = section == "meaning" ? byMeaning : direct
@@ -137,23 +142,37 @@ final class AppModel {
         let scanner = scanner
         let sortDictionary = settings.sortFrequencyDictionary
         return await Task.detached(priority: .userInitiated) { () -> SearchOutcome in
+            let started = Date()
             var outcome = SearchOutcome(sentence: text)
             if Kana.containsJapanese(text) {
                 outcome.direct = HeadwordGroup.group(scanner.scan(text, in: store).map(\.groupInput))
+                HeadwordGroup.attachMeta(&outcome.direct, from: store, sortDictionary: sortDictionary)
+                outcome.direct = HeadwordGroup.sortedForScan(outcome.direct)
             } else {
-                if let kana = Romaji.toHiragana(text) {
+                // Romaji is one word: "to run" is English, not とるん.
+                if !text.contains(" "), let kana = Romaji.toHiragana(text) {
                     // Only whole-word matches: "sake" should give 酒, not さ + rest.
                     let exact = scanner.scan(kana, in: store).filter { $0.matchedLength == kana.count }
                     if !exact.isEmpty {
                         outcome.romajiReading = kana
                         outcome.direct = HeadwordGroup.group(exact.map(\.groupInput))
+                        HeadwordGroup.attachMeta(&outcome.direct, from: store, sortDictionary: sortDictionary)
+                        outcome.direct = HeadwordGroup.sortedForScan(outcome.direct)
                     }
                 }
-                outcome.byMeaning = HeadwordGroup.group(store.reverseSearch(text).map { ($0.entry, text, []) })
+                outcome.byMeaning = HeadwordGroup.group(store.reverseSearch(text, limit: 30).map { ($0.entry, text, []) })
                 HeadwordGroup.attachMeta(&outcome.byMeaning, from: store, sortDictionary: sortDictionary)
+                let romajiRank = outcome.direct.compactMap(\.sortRank).min()
+                let meaningRank = outcome.byMeaning.prefix(3).compactMap(\.sortRank).min()
+                if !outcome.byMeaning.isEmpty {
+                    switch (romajiRank, meaningRank) {
+                    case let (r?, m?): outcome.romajiFirst = r <= m
+                    case (_?, nil): outcome.romajiFirst = true
+                    default: outcome.romajiFirst = false
+                    }
+                }
             }
-            HeadwordGroup.attachMeta(&outcome.direct, from: store, sortDictionary: sortDictionary)
-            outcome.direct = HeadwordGroup.sortedForScan(outcome.direct)
+            outcome.milliseconds = Int(Date().timeIntervalSince(started) * 1000)
             return outcome
         }.value
     }

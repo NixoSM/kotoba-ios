@@ -51,7 +51,8 @@ public enum ReverseSearch {
 
     /// How well an indexed text answers the query. 0 means "not a real match".
     public static func score(query: String, indexText: String) -> Int {
-        let q = normalize(query)
+        var q = normalize(query)
+        if q.hasPrefix("to ") { q.removeFirst(3) } // "to run" is asked as "run"
         guard !q.isEmpty else { return 0 }
         let qWords = Set(q.split(separator: " "))
         var best = 0
@@ -75,14 +76,25 @@ public enum ReverseSearch {
     }
 
     /// FTS5 query: every word must appear; the last one may be a prefix while typing.
+    /// Words like "to" or "il" are left out of the match (they are in half of
+    /// all definitions and make it slow) but still count when ranking.
     public static func ftsQuery(for text: String) -> String? {
-        let words = normalize(text).split(separator: " ").map(String.init)
-        guard !words.isEmpty else { return nil }
+        let all = normalize(text).split(separator: " ").map(String.init)
+        guard !all.isEmpty else { return nil }
+        let meaningful = all.filter { !stopwords.contains($0) }
+        let words = meaningful.isEmpty ? all : meaningful
+        let lastTyped = all.last
         return words.enumerated().map { i, w in
             let quoted = "\"" + w.replacingOccurrences(of: "\"", with: "") + "\""
-            return i == words.count - 1 && w.count >= 3 ? quoted + "*" : quoted
+            let isLast = i == words.count - 1 && w == lastTyped
+            return isLast && w.count >= 3 ? quoted + "*" : quoted
         }.joined(separator: " ")
     }
+
+    private static let stopwords: Set<String> = [
+        "to", "a", "an", "the", "of", "be",
+        "il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "di", "da", "del", "della", "e",
+    ]
 
     /// Reads a Yomitan frequency value: a number, {value}, or {reading, frequency}.
     public static func frequencyValue(_ json: Any) -> Double? {

@@ -33,6 +33,8 @@ public struct TermEntry: Hashable, Sendable {
     public var termTags: [String]
     /// Title of the dictionary the entry came from (filled in by the store).
     public var dictionary: String = ""
+    /// Row id in the store, so the glossary can be fetched later.
+    public var rowID: Int64? = nil
 }
 
 public enum TermMetaKind: String, Sendable {
