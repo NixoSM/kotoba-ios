@@ -36,7 +36,12 @@ public enum YomitanImporter {
         var report = ImportProgress(dictionaryTitle: index.title, banksDone: 0, banksTotal: banks.count)
         progress(report)
 
-        return try store.install(index: index) { session in
+        var styles = ""
+        if let cssEntry = archive["styles.css"] {
+            styles = String(decoding: try read(cssEntry, from: archive), as: UTF8.self)
+        }
+
+        return try store.install(index: index, styles: styles) { session in
             for path in banks {
                 guard let entry = archive[path] else { continue }
                 let data = try read(entry, from: archive)

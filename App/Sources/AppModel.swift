@@ -31,8 +31,11 @@ final class AppModel {
         buildMissingReverseIndexes()
     }
 
+    private(set) var stylesheets: [String: String] = [:]
+
     func refresh() {
         dictionaries = (try? store?.dictionaries()) ?? []
+        stylesheets = store?.stylesheets() ?? [:]
     }
 
     /// What a search returns, split by how each headword was found.

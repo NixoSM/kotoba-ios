@@ -24,7 +24,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     private let db: SQLiteDatabase
     private let lock = NSLock()
 
-    public static let schemaVersion = 2
+    public static let schemaVersion = 3
 
     /// Pass `":memory:"` for a throwaway store (tests).
     public init(path: String) throws {
@@ -82,6 +82,10 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
             CREATE VIRTUAL TABLE IF NOT EXISTS gloss_fts USING fts5(text, tokenize = 'unicode61 remove_diacritics 2');
             """)
         }
+        if version < 3 {
+            // v3: dictionary stylesheets (styles.css inside the zip).
+            try db.execute("ALTER TABLE dictionaries ADD COLUMN styles TEXT NOT NULL DEFAULT ''")
+        }
         try db.execute("PRAGMA user_version = \(Self.schemaVersion)")
     }
 
@@ -102,6 +106,15 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
                                                    priority: r.int(3), enabled: r.int(4) != 0,
                                                    termCount: r.int(5), metaCount: r.int(6)))
                 }
+            return out
+        }
+    }
+
+    /// Each dictionary's styles.css, by title (only those that have one).
+    public func stylesheets() -> [String: String] {
+        locked {
+            var out: [String: String] = [:]
+            try? db.prepare("SELECT title, styles FROM dictionaries WHERE styles != ''").rows { out[$0.string(0)] = $0.string(1) }
             return out
         }
     }
@@ -174,7 +187,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
 
     /// Installs a dictionary in a single transaction: if `body` throws,
     /// nothing is left behind.
-    public func install(index: DictionaryIndex, _ body: (ImportSession) throws -> Void) throws -> InstalledDictionary {
+    public func install(index: DictionaryIndex, styles: String = "", _ body: (ImportSession) throws -> Void) throws -> InstalledDictionary {
         try locked {
             try db.transaction {
                 var exists = false
@@ -184,8 +197,8 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
                 var priority = 0
                 try db.prepare("SELECT COALESCE(MAX(priority) + 1, 0) FROM dictionaries").rows { priority = $0.int(0) }
                 let indexJSON = try JSONEncoder().encode(index)
-                try db.prepare("INSERT INTO dictionaries (title, revision, index_json, priority) VALUES (?1, ?2, ?3, ?4)")
-                    .bind(index.title, index.revision, indexJSON, priority).run()
+                try db.prepare("INSERT INTO dictionaries (title, revision, index_json, priority, styles) VALUES (?1, ?2, ?3, ?4, ?5)")
+                    .bind(index.title, index.revision, indexJSON, priority, styles).run()
                 let id = db.lastInsertRowID
 
                 let session = try ImportSession(db: db, dictID: id)

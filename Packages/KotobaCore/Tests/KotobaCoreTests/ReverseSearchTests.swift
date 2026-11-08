@@ -51,3 +51,27 @@ final class ReverseSearchTests: XCTestCase {
         XCTAssertEqual(ReverseSearch.frequencyValue(["reading": "x", "frequency": ["value": 3]] as [String: Any]), 3)
     }
 }
+
+final class GlossaryHTMLTests: XCTestCase {
+    func testRendersStructureSafely() {
+        let json = #"[{"type":"structured-content","content":[{"tag":"details","content":[{"tag":"summary","content":"7 examples"},{"tag":"div","data":{"content":"example"},"style":{"fontWeight":"bold"},"content":"<script>x</script>"}]}]}]"#
+        let html = GlossaryHTML.items(fromJSON: Data(json.utf8)).first ?? ""
+        XCTAssertTrue(html.hasPrefix("<details><summary>7 examples</summary>"))
+        XCTAssertTrue(html.contains(#"data-sc-content="example""#))
+        XCTAssertTrue(html.contains(#"style="font-weight:bold""#))
+        XCTAssertTrue(html.contains("&lt;script&gt;"))
+        XCTAssertFalse(html.contains("<script>"))
+    }
+
+    func testInternalLinksBecomeSearches() {
+        let json = #"[{"type":"structured-content","content":{"tag":"a","href":"?query=守備&wildcards=off","content":"守備"}}]"#
+        let html = GlossaryHTML.items(fromJSON: Data(json.utf8)).first ?? ""
+        XCTAssertTrue(html.contains("kotoba://search?q="), html)
+    }
+
+    func testScopedCSS() {
+        let css = "/* c */ .a, span[data-sc-x] { color: red } @media (max-width: 10px) { .b { margin: 0 } }"
+        XCTAssertEqual(GlossaryHTML.scopedCSS(css, scope: "[data-d=\"1\"]"),
+                       "[data-d=\"1\"] .a,[data-d=\"1\"] span[data-sc-x]{ color: red }@media (max-width: 10px){[data-d=\"1\"] .b{ margin: 0 }}")
+    }
+}
