@@ -17,7 +17,8 @@ struct HeadwordGroup: Identifiable, Sendable {
     /// Value from the sort dictionary; lower = more common.
     var sortRank: Double?
 
-    static func group(_ results: [(entry: TermEntry, matchedText: String, reasons: [Reason])]) -> [HeadwordGroup] {
+    static func group(_ results: [(entry: TermEntry, matchedText: String, reasons: [Reason])],
+                      priority: [String: Int] = [:]) -> [HeadwordGroup] {
         var order: [String] = []
         var groups: [String: HeadwordGroup] = [:]
         for r in results {
@@ -38,7 +39,16 @@ struct HeadwordGroup: Identifiable, Sendable {
                 groups[key]!.definitions.append((r.entry.dictionary, items))
             }
         }
-        return order.compactMap { groups[$0] }
+        // Results are ranked by word, not by dictionary: put each word's
+        // definitions back in your dictionary order.
+        return order.compactMap { key in
+            guard var g = groups[key] else { return nil }
+            g.definitions = g.definitions.enumerated().sorted {
+                let (p, q) = (priority[$0.element.dictionary] ?? Int.max, priority[$1.element.dictionary] ?? Int.max)
+                return p != q ? p < q : $0.offset < $1.offset
+            }.map(\.element)
+            return g
+        }
     }
 
     /// Adds frequencies and pitch accents, keeping only those for this reading.

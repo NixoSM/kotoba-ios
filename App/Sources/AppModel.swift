@@ -143,11 +143,13 @@ final class AppModel {
         guard let store, !text.isEmpty else { return SearchOutcome() }
         let scanner = scanner
         let sortDictionary = settings.sortFrequencyDictionary
+        // Your dictionary order, so definitions under a word follow it.
+        let priority = Dictionary(dictionaries.map { ($0.title, $0.priority) }, uniquingKeysWith: { a, _ in a })
         return await Task.detached(priority: .userInitiated) { () -> SearchOutcome in
             let started = Date()
             var outcome = SearchOutcome(sentence: text)
             if Kana.containsJapanese(text) {
-                outcome.direct = HeadwordGroup.group(scanner.scan(text, in: store).map(\.groupInput))
+                outcome.direct = HeadwordGroup.group(scanner.scan(text, in: store).map(\.groupInput), priority: priority)
                 HeadwordGroup.attachMeta(&outcome.direct, from: store, sortDictionary: sortDictionary)
                 outcome.direct = HeadwordGroup.sortedForScan(outcome.direct)
             } else {
@@ -157,12 +159,12 @@ final class AppModel {
                     let exact = scanner.scan(kana, in: store).filter { $0.matchedLength == kana.count }
                     if !exact.isEmpty {
                         outcome.romajiReading = kana
-                        outcome.direct = HeadwordGroup.group(exact.map(\.groupInput))
+                        outcome.direct = HeadwordGroup.group(exact.map(\.groupInput), priority: priority)
                         HeadwordGroup.attachMeta(&outcome.direct, from: store, sortDictionary: sortDictionary)
                         outcome.direct = HeadwordGroup.sortedForScan(outcome.direct)
                     }
                 }
-                outcome.byMeaning = HeadwordGroup.group(store.reverseSearch(text, limit: 30).map { ($0.entry, text, []) })
+                outcome.byMeaning = HeadwordGroup.group(store.reverseSearch(text, limit: 30).map { ($0.entry, text, []) }, priority: priority)
                 HeadwordGroup.attachMeta(&outcome.byMeaning, from: store, sortDictionary: sortDictionary)
                 let romajiRank = outcome.direct.compactMap(\.sortRank).min()
                 let meaningRank = outcome.byMeaning.prefix(3).compactMap(\.sortRank).min()
