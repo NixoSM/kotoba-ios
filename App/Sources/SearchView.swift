@@ -1,44 +1,6 @@
 import SwiftUI
 import KotobaCore
 
-/// One headword with every dictionary's definitions merged under it
-/// (Yomitan's "merge" result mode, which is how you have it set up).
-struct HeadwordGroup: Identifiable {
-    let id: String
-    let expression: String
-    let reading: String
-    let matchedText: String
-    let reasons: [Reason]
-    /// HTML fragments per dictionary, in dictionary priority order.
-    var definitions: [(dictionary: String, items: [String])]
-
-    static func group(_ results: [(entry: TermEntry, matchedText: String, reasons: [Reason])]) -> [HeadwordGroup] {
-        var order: [String] = []
-        var groups: [String: HeadwordGroup] = [:]
-        for r in results {
-            let key = r.entry.expression + "|" + r.entry.reading
-            let items = GlossaryHTML.items(fromJSON: r.entry.glossaryJSON)
-            if groups[key] == nil {
-                order.append(key)
-                groups[key] = HeadwordGroup(id: key, expression: r.entry.expression, reading: r.entry.reading,
-                                            matchedText: r.matchedText, reasons: r.reasons, definitions: [])
-            }
-            if let i = groups[key]!.definitions.firstIndex(where: { $0.dictionary == r.entry.dictionary }) {
-                groups[key]!.definitions[i].items += items
-            } else {
-                groups[key]!.definitions.append((r.entry.dictionary, items))
-            }
-        }
-        return order.compactMap { groups[$0] }
-    }
-}
-
-extension LookupResult {
-    var groupInput: (entry: TermEntry, matchedText: String, reasons: [Reason]) {
-        (entry, matchedText, deinflection.reasons)
-    }
-}
-
 struct SearchView: View {
     @Environment(AppModel.self) private var model
     @State private var query = ""
@@ -46,13 +8,29 @@ struct SearchView: View {
 
     private var page: String {
         ResultsPage.html(outcome: outcome, query: query, stylesheets: model.stylesheets,
-                         indexStatus: model.reverseIndexStatus)
+                         indexStatus: model.reverseIndexStatus, mined: model.settings.mined,
+                         canMine: model.settings.ankiFormat != nil)
+    }
+
+    private func handle(_ url: URL) {
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
+        switch url.host {
+        case "search":
+            if let q = value("q") { query = q }
+        case "mine":
+            if let section = value("s"), let i = value("i").flatMap(Int.init), let group = outcome.group(section: section, index: i) {
+                model.mine(group, sentence: outcome.sentence)
+            }
+        default:
+            break
+        }
     }
 
     var body: some View {
         NavigationStack {
             ZStack {
-                ResultsWebView(html: page) { query = $0 }
+                ResultsWebView(html: page, onAction: handle)
                     .ignoresSafeArea(edges: .bottom)
                 if model.dictionaries.isEmpty {
                     ContentUnavailableView("Nessun dizionario",
@@ -67,6 +45,12 @@ struct SearchView: View {
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "日本語 · italiano · English · romaji")
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
+            .onChange(of: model.pendingQuery) { _, newValue in
+                if let newValue {
+                    query = newValue
+                    model.pendingQuery = nil
+                }
+            }
             .task(id: query) {
                 // Small pause so we don't search on every keystroke.
                 try? await Task.sleep(for: .milliseconds(120))

@@ -1,13 +1,13 @@
 import SwiftUI
 import WebKit
 
-/// Shows the results HTML. Links to other entries run a new search;
-/// web links open in Safari.
+/// Shows the results HTML. kotoba:// links (other entries, the mine button)
+/// go to `onAction`; web links open in Safari.
 struct ResultsWebView: UIViewRepresentable {
     let html: String
-    let onSearch: (String) -> Void
+    let onAction: (URL) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onSearch: onSearch) }
+    func makeCoordinator() -> Coordinator { Coordinator(onAction: onAction) }
 
     func makeUIView(context: Context) -> WKWebView {
         let view = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
@@ -20,17 +20,17 @@ struct ResultsWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: WKWebView, context: Context) {
-        context.coordinator.onSearch = onSearch
+        context.coordinator.onAction = onAction
         guard context.coordinator.lastHTML != html else { return }
         context.coordinator.lastHTML = html
         view.loadHTMLString(html, baseURL: nil)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
-        var onSearch: (String) -> Void
+        var onAction: (URL) -> Void
         var lastHTML = ""
 
-        init(onSearch: @escaping (String) -> Void) { self.onSearch = onSearch }
+        init(onAction: @escaping (URL) -> Void) { self.onAction = onAction }
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -38,9 +38,8 @@ struct ResultsWebView: UIViewRepresentable {
                 decisionHandler(.allow)
                 return
             }
-            if url.scheme == "kotoba", url.host == "search",
-               let q = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "q" })?.value {
-                onSearch(q)
+            if url.scheme == "kotoba" {
+                onAction(url)
             } else if url.scheme == "https" || url.scheme == "http" {
                 UIApplication.shared.open(url)
             }

@@ -13,14 +13,26 @@ targets:
     sources: [App/Sources]
     dependencies:
       - package: KotobaCore
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Kotoba
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        CFBundleURLTypes:
+          - CFBundleURLName: com.nixosm.kotoba
+            CFBundleURLSchemes: [kotoba]
+        LSApplicationQueriesSchemes: [anki]
+        NSCameraUsageDescription: "Kotoba usa la fotocamera per leggere il testo giapponese e cercarlo nel dizionario."
+        NSPhotoLibraryUsageDescription: "Kotoba legge il testo giapponese dalle immagini che scegli."
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nixosm.kotoba
-        MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "1"
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Kotoba
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        MARKETING_VERSION: "0.4.0"
+        CURRENT_PROJECT_VERSION: "4"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.0"
