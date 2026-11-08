@@ -62,7 +62,10 @@ enum ResultsPage {
         for def in g.definitions {
             html += "<section class=\"dict\" data-dict=\"\(scopeID(def.dictionary))\">"
             html += "<div class=\"dict-name\">\(GlossaryHTML.escape(def.dictionary))</div>"
-            if def.items.count == 1 {
+            if def.items.count > 1, def.items.allSatisfy({ !$0.contains("<") && $0.count <= 80 }) {
+                // Short plain glosses read best on one line: barrier | obstacle | hurdle.
+                html += "<div class=\"gloss single inline\">" + def.items.joined(separator: "<span class=\"sep\"> | </span>") + "</div>"
+            } else if def.items.count == 1 {
                 html += "<div class=\"gloss single\">\(def.items[0])</div>"
             } else {
                 html += "<ol class=\"gloss\">" + def.items.map { "<li>\($0)</li>" }.joined() + "</ol>"
@@ -77,10 +80,20 @@ enum ResultsPage {
         var html = ""
         let pitch = PitchHTML.list(g.pitches, reading: g.reading)
         if !pitch.isEmpty { html += "<div class=\"pitches\" lang=\"ja\">\(pitch)</div>" }
-        if !g.frequencies.isEmpty {
-            html += "<div class=\"freqs\">" + g.frequencies.map {
-                "<span class=\"freq\"><span class=\"freq-name\">\(GlossaryHTML.escape($0.dictionary))</span>\(GlossaryHTML.escape($0.display))</span>"
+        if !g.partsOfSpeech.isEmpty {
+            html += "<div class=\"tags\">" + g.partsOfSpeech.prefix(6).map {
+                "<span class=\"tag\">\(GlossaryHTML.escape($0))</span>"
             }.joined() + "</div>"
+        }
+        // One number up front (harmonic mean of every list, as in Yomitan's
+        // "Average"); the single lists open with a tap.
+        let values = g.frequencies.map(\.value).filter { $0 > 0 }
+        if !values.isEmpty {
+            let mean = Int((Double(values.count) / values.reduce(0) { $0 + 1 / $1 }).rounded())
+            html += "<details class=\"freqs\"><summary><span class=\"freq avg\"><span class=\"freq-name\">Frequenza</span>\(mean)</span></summary><div class=\"freq-list\">"
+                + g.frequencies.map {
+                    "<span class=\"freq\"><span class=\"freq-name\">\(GlossaryHTML.escape($0.dictionary))</span>\(GlossaryHTML.escape($0.display))</span>"
+                }.joined() + "</div></details>"
         }
         return html
     }
@@ -158,7 +171,14 @@ enum ResultsPage {
     .pitches { font-size:15px; margin:2px 0 6px; }
     .pitches ol { margin:0; padding-left:1.3em; }
     .pitch { letter-spacing:.02em; }
-    .freqs { display:flex; flex-wrap:wrap; gap:6px; margin:4px 0 8px; }
+    .freqs { margin:4px 0 8px; }
+    .freqs > summary { list-style:none; display:inline-block; color:var(--fg); }
+    .freqs > summary::-webkit-details-marker { display:none; }
+    .freq-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+    .freq.avg { border-color:var(--accent); }
+    .tags { display:flex; flex-wrap:wrap; gap:4px; margin:2px 0 6px; }
+    .tag { font-size:11px; padding:1px 6px; border-radius:4px; background:color-mix(in srgb, var(--fg) 12%, transparent); color:var(--muted); }
+    .inline .sep { color:var(--muted); }
     .freq { font-size:12px; border:1px solid var(--rule); border-radius:6px; padding:1px 6px; }
     .freq-name { color:var(--muted); margin-right:6px; }
     .chain { font: 12px ui-monospace, Menlo, monospace; color:var(--accent); margin-bottom:10px; }
