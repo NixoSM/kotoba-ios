@@ -58,6 +58,8 @@ struct DictionariesView: View {
                     Text("Trascina per cambiare l'ordine in cui i dizionari compaiono nei risultati. Scorri verso destra per mostrare un dizionario chiuso nei risultati (si apre toccandone il nome), verso sinistra per eliminarlo.")
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Palette.paper)
             .navigationTitle("Dizionari")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { EditButton() }

@@ -9,6 +9,9 @@ struct AppSettings: Codable, Equatable {
     var mined: Set<String> = []
     /// Dictionaries shown closed in results (tap the name to open), e.g. Pixiv.
     var collapsedDictionaries: Set<String> = []
+    var appearance = Appearance()
+    /// Recent searches, newest first.
+    var history: [String] = []
 
     init() {}
 
@@ -20,6 +23,8 @@ struct AppSettings: Codable, Equatable {
         sortFrequencyDictionary = try c.decodeIfPresent(String.self, forKey: .sortFrequencyDictionary)
         mined = try c.decodeIfPresent(Set<String>.self, forKey: .mined) ?? []
         collapsedDictionaries = try c.decodeIfPresent(Set<String>.self, forKey: .collapsedDictionaries) ?? []
+        appearance = (try? c.decodeIfPresent(Appearance.self, forKey: .appearance)) ?? Appearance()
+        history = (try? c.decodeIfPresent([String].self, forKey: .history)) ?? []
     }
 
     private static let key = "settings.v1"
@@ -28,6 +33,14 @@ struct AppSettings: Codable, Equatable {
         guard let data = UserDefaults.standard.data(forKey: key),
               let settings = try? JSONDecoder().decode(AppSettings.self, from: data) else { return AppSettings() }
         return settings
+    }
+
+    mutating func remember(_ query: String) {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return }
+        history.removeAll { $0 == q }
+        history.insert(q, at: 0)
+        if history.count > 40 { history.removeLast(history.count - 40) }
     }
 
     func save() {

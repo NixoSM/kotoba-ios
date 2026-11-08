@@ -15,16 +15,18 @@ struct KotobaApp: App {
                     model.pendingQuery = text
                     tab = 0
                 })
-                    .tabItem { Label("Fotocamera", systemImage: "viewfinder") }
+                    .tabItem { Label("Fotocamera", systemImage: "text.viewfinder") }
                     .tag(1)
                 DictionariesView()
-                    .tabItem { Label("Dizionari", systemImage: "square.stack.3d.up") }
+                    .tabItem { Label("Dizionari", systemImage: "books.vertical") }
                     .tag(2)
                 SettingsView()
                     .tabItem { Label("Impostazioni", systemImage: "slider.horizontal.3") }
                     .tag(3)
             }
             .environment(model)
+            .tint(Palette.shu)
+            .preferredColorScheme(model.settings.appearance.theme.colorScheme)
             .onOpenURL { url in
                 model.handle(url: url)
                 if url.host == "search" { tab = 0 }

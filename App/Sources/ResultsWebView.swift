@@ -59,6 +59,11 @@ final class MediaSchemeHandler: NSObject, WKURLSchemeHandler {
     /// Set once at launch.
     nonisolated(unsafe) static var store: DictionaryStore?
 
+    /// A font file, bundled or added by the user.
+    static func fontURL(_ file: String) -> String {
+        scheme + "://font/" + (file.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? file)
+    }
+
     static func url(dictionary: String, path: String) -> String {
         var c = URLComponents()
         c.scheme = scheme
@@ -68,6 +73,18 @@ final class MediaSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
+        if let url = task.request.url, url.host == "font" {
+            let file = url.lastPathComponent
+            guard let fileURL = FontCatalog.fileURL(file), let data = try? Data(contentsOf: fileURL) else {
+                task.didFailWithError(URLError(.fileDoesNotExist))
+                return
+            }
+            let mime = file.lowercased().hasSuffix(".otf") ? "font/otf" : "font/ttf"
+            task.didReceive(URLResponse(url: url, mimeType: mime, expectedContentLength: data.count, textEncodingName: nil))
+            task.didReceive(data)
+            task.didFinish()
+            return
+        }
         guard let url = task.request.url,
               let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
               let dictionary = items.first(where: { $0.name == "d" })?.value,

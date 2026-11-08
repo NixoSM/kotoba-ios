@@ -121,6 +121,8 @@ final class AppModel {
                 settings.sortFrequencyDictionary = sort
                 report.append("Ordinamento per frequenza: \(sort).")
             }
+            settings.appearance.apply(parsed.appearance)
+            report.append("Aspetto: carattere \(FontCatalog.choice(settings.appearance.bodyFont).name), \(Int(settings.appearance.fontSize)) pt, layout \(settings.appearance.layout.label.lowercased()).")
             if let format = parsed.ankiTermFormat {
                 settings.ankiFormat = format
                 report.append("Nota Anki: \(format.model) → \(format.deck).")

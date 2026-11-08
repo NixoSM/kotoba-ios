@@ -7,6 +7,13 @@ public struct FrequencyInfo: Hashable, Sendable {
     public var reading: String?
     public var value: Double
     public var display: String
+
+    public init(dictionary: String, reading: String? = nil, value: Double, display: String) {
+        self.dictionary = dictionary
+        self.reading = reading
+        self.value = value
+        self.display = display
+    }
 }
 
 /// Pitch accent of one reading: each position is the mora after which the
@@ -15,6 +22,12 @@ public struct PitchInfo: Hashable, Sendable {
     public var dictionary: String
     public var reading: String
     public var positions: [Int]
+
+    public init(dictionary: String, reading: String, positions: [Int]) {
+        self.dictionary = dictionary
+        self.reading = reading
+        self.positions = positions
+    }
 }
 
 public enum TermMetaParser {

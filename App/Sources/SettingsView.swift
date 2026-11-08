@@ -12,13 +12,30 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
+                    NavigationLink {
+                        AppearanceView()
+                    } label: {
+                        HStack(spacing: 14) {
+                            Text("字").font(.mincho(26, bold: true)).foregroundStyle(Palette.shu)
+                                .frame(width: 40, height: 40)
+                                .background(Palette.shu.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Aspetto")
+                                Text("\(FontCatalog.choice(model.settings.appearance.bodyFont).name) · \(Int(model.settings.appearance.fontSize)) pt · \(model.settings.appearance.layout.label)")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                Section {
                     Button {
                         pickingBackup = true
                     } label: {
                         Label("Importa impostazioni di Yomitan", systemImage: "square.and.arrow.down")
                     }
                 } footer: {
-                    Text("Il file yomitan-settings-….json: applica ordine e attivazione dei dizionari, il dizionario di frequenza per l'ordinamento e la nota Anki.")
+                    Text("Il file yomitan-settings-….json: applica ordine e attivazione dei dizionari, il dizionario di frequenza, l'aspetto (font, dimensioni, layout) e la nota Anki.")
                 }
 
                 Section("Ordinamento dei risultati") {
@@ -47,6 +64,8 @@ struct SettingsView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Palette.paper)
             .navigationTitle("Impostazioni")
             .fileImporter(isPresented: $pickingBackup, allowedContentTypes: [.json]) { result in
                 if case .success(let url) = result { model.importYomitanSettings(from: url) }

@@ -58,7 +58,7 @@ final class AnkiAndMetaTests: XCTestCase {
     func testYomitanSettings() throws {
         let json = """
         {"version":1,"options":{"profileCurrent":0,"profiles":[{"name":"Default","options":{
-          "general":{"sortFrequencyDictionary":"JPDB"},
+          "general":{"sortFrequencyDictionary":"JPDB","fontFamily":"Klee One Semibold","fontSize":18,"lineHeight":"1.2","glossaryLayoutMode":"compact-popup-anki"},
           "dictionaries":[{"name":"B","enabled":true},{"name":"A","enabled":false},{"name":"Missing","enabled":true}],
           "anki":{"tags":["yomitan"],"cardFormats":[{"name":"Expression","type":"term","deck":"Mine","model":"Animecards",
             "fields":{"Word":{"value":"{expression}"},"Reading":{"value":"{reading}"},"Glossary":{"value":"{glossary}"}}}]}
@@ -70,5 +70,9 @@ final class AnkiAndMetaTests: XCTestCase {
         XCTAssertEqual(settings.ankiTermFormat?.fields.map(\.name), ["Word", "Reading", "Glossary"])
         XCTAssertEqual(settings.ankiTermFormat?.deck, "Mine")
         XCTAssertEqual(settings.ankiTermFormat?.tags, ["yomitan"])
+        XCTAssertEqual(settings.appearance.fontFamily, "Klee One Semibold")
+        XCTAssertEqual(settings.appearance.fontSize, 18)
+        XCTAssertEqual(settings.appearance.lineHeight, 1.2)
+        XCTAssertEqual(settings.appearance.glossaryLayoutMode, "compact-popup-anki")
     }
 }

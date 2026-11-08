@@ -18,10 +18,10 @@ struct ResultsPane: View {
     let onSearch: (String) -> Void
 
     var body: some View {
-        ResultsWebView(html: ResultsPage.html(outcome: outcome, query: query, stylesheets: model.stylesheets,
-                                              indexStatus: indexStatus, mined: model.settings.mined,
-                                              canMine: model.settings.ankiFormat != nil,
-                                              collapsed: model.settings.collapsedDictionaries),
+        ResultsWebView(html: ResultsPage.html(outcome: outcome, query: query, options: ResultsPage.Options(
+            stylesheets: model.stylesheets, indexStatus: indexStatus, mined: model.settings.mined,
+            canMine: model.settings.ankiFormat != nil, collapsed: model.settings.collapsedDictionaries,
+            appearance: model.settings.appearance)),
                        onAction: handle)
     }
 

@@ -10,7 +10,9 @@ targets:
   Kotoba:
     type: application
     platform: iOS
-    sources: [App/Sources]
+    sources:
+      - App/Sources
+      - App/Resources
     dependencies:
       - package: KotobaCore
     info:
@@ -30,11 +32,13 @@ targets:
         NSCameraUsageDescription: "Kotoba usa la fotocamera per leggere il testo giapponese e cercarlo nel dizionario."
         NSPhotoLibraryUsageDescription: "Kotoba legge il testo giapponese dalle immagini che scegli."
         UIFileSharingEnabled: true
+        UIAppFonts: [KleeOne-Regular.ttf, KleeOne-SemiBold.ttf, ShipporiMincho-Medium.ttf, ShipporiMincho-Bold.ttf, ZenMaruGothic-Medium.ttf]
         LSSupportsOpeningDocumentsInPlace: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nixosm.kotoba
-        MARKETING_VERSION: "0.6.0"
-        CURRENT_PROJECT_VERSION: "6"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        MARKETING_VERSION: "0.7.0"
+        CURRENT_PROJECT_VERSION: "7"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.0"

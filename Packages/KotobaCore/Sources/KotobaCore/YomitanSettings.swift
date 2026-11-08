@@ -12,6 +12,28 @@ public struct YomitanSettings: Sendable {
     public var dictionaries: [DictionarySetting]
     public var sortFrequencyDictionary: String?
     public var ankiTermFormat: AnkiNoteFormat?
+    public var appearance = Appearance()
+
+    /// Yomitan's display options ("Appearance" in its settings).
+    public struct Appearance: Sendable, Equatable {
+        public var fontFamily: String?
+        public var fontSize: Double?
+        public var lineHeight: Double?
+        /// "default", "compact", "compact-popup-anki"…
+        public var glossaryLayoutMode: String?
+        /// "ruby", "ruby-and-reading", "term-and-reading", "term-only"
+        public var termDisplayMode: String?
+        public var frequencyDisplayMode: String?
+        public var averageFrequency: Bool?
+        public var compactTags: Bool?
+        public var pitchDownstepNotation: Bool?
+        public var pitchPositionNotation: Bool?
+        public var pitchGraph: Bool?
+        /// "light", "dark", "browser", "site"
+        public var theme: String?
+        public var customCSS: String?
+        public init() {}
+    }
 
     public enum ParseError: Error { case notYomitanSettings }
 
@@ -51,10 +73,34 @@ public struct YomitanSettings: Sendable {
         }
 
         let sortDictionary = general["sortFrequencyDictionary"] as? String
+        var appearance = Appearance()
+        appearance.fontFamily = (general["fontFamily"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        appearance.fontSize = number(general["fontSize"])
+        appearance.lineHeight = number(general["lineHeight"])
+        appearance.glossaryLayoutMode = general["glossaryLayoutMode"] as? String
+        appearance.termDisplayMode = general["termDisplayMode"] as? String
+        appearance.frequencyDisplayMode = general["frequencyDisplayMode"] as? String
+        appearance.averageFrequency = general["averageFrequency"] as? Bool
+        appearance.compactTags = general["compactTags"] as? Bool
+        appearance.pitchDownstepNotation = general["showPitchAccentDownstepNotation"] as? Bool
+        appearance.pitchPositionNotation = general["showPitchAccentPositionNotation"] as? Bool
+        appearance.pitchGraph = general["showPitchAccentGraph"] as? Bool
+        appearance.theme = general["popupTheme"] as? String
+        appearance.customCSS = general["customPopupCss"] as? String
         return YomitanSettings(profileName: profile["name"] as? String ?? "Default",
                                dictionaries: dictionaries,
                                sortFrequencyDictionary: (sortDictionary?.isEmpty ?? true) ? nil : sortDictionary,
-                               ankiTermFormat: format)
+                               ankiTermFormat: format,
+                               appearance: appearance)
+    }
+
+    /// Yomitan stores some numbers as strings ("1.2").
+    private static func number(_ value: Any?) -> Double? {
+        switch value {
+        case let n as NSNumber: return n.doubleValue
+        case let s as String: return Double(s)
+        default: return nil
+        }
     }
 
     private static func noteFormat(_ o: [String: Any], tags: [String], raw: String) -> AnkiNoteFormat {
