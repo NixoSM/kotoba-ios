@@ -5,20 +5,20 @@ import KotobaCore
 /// that each dictionary's own structure and stylesheet survive.
 enum ResultsPage {
     static func html(outcome: AppModel.SearchOutcome, query: String, stylesheets: [String: String], indexStatus: String?,
-                     mined: Set<String>, canMine: Bool) -> String {
+                     mined: Set<String>, canMine: Bool, collapsed: Set<String> = []) -> String {
         var direct = ""
         if let reading = outcome.romajiReading, !outcome.direct.isEmpty {
             direct += section("Letto come \(reading)")
         }
         for (i, g) in outcome.direct.enumerated() {
-            direct += entry(g, link: canMine ? "kotoba://mine?s=direct&i=\(i)" : nil, mined: mined.contains(g.minedKey))
+            direct += entry(g, link: canMine ? "kotoba://mine?s=direct&i=\(i)" : nil, mined: mined.contains(g.minedKey), collapsed: collapsed)
         }
         var meaning = ""
         if !outcome.byMeaning.isEmpty {
             meaning += section("Parole che significano «\(query.trimmingCharacters(in: .whitespaces))»")
             if let indexStatus { meaning += "<p class=\"note\">\(GlossaryHTML.escape(indexStatus))</p>" }
             for (i, g) in outcome.byMeaning.enumerated() {
-                meaning += entry(g, link: canMine ? "kotoba://mine?s=meaning&i=\(i)" : nil, mined: mined.contains(g.minedKey))
+                meaning += entry(g, link: canMine ? "kotoba://mine?s=meaning&i=\(i)" : nil, mined: mined.contains(g.minedKey), collapsed: collapsed)
             }
         }
         var body = outcome.romajiFirst ? direct + meaning : meaning + direct
@@ -43,7 +43,7 @@ enum ResultsPage {
         "<h2 class=\"section\">\(GlossaryHTML.escape(text))</h2>"
     }
 
-    private static func entry(_ g: HeadwordGroup, link: String?, mined: Bool) -> String {
+    private static func entry(_ g: HeadwordGroup, link: String?, mined: Bool, collapsed: Set<String>) -> String {
         var html = "<article class=\"entry\"><header>"
         let audio = "kotoba://audio?e=\(percent(g.expression))&r=\(percent(g.reading))"
         html += "<a class=\"audio\" href=\"\(audio)\" aria-label=\"Ascolta\">▶︎</a>"
@@ -60,8 +60,10 @@ enum ResultsPage {
         html += metaRow(g)
         html += "</header>"
         for def in g.definitions {
-            html += "<section class=\"dict\" data-dict=\"\(scopeID(def.dictionary))\">"
-            html += "<div class=\"dict-name\">\(GlossaryHTML.escape(def.dictionary))</div>"
+            let closed = collapsed.contains(def.dictionary)
+            html += closed
+                ? "<details class=\"dict closed\" data-dict=\"\(scopeID(def.dictionary))\"><summary class=\"dict-name\">\(GlossaryHTML.escape(def.dictionary))</summary>"
+                : "<section class=\"dict\" data-dict=\"\(scopeID(def.dictionary))\"><div class=\"dict-name\">\(GlossaryHTML.escape(def.dictionary))</div>"
             if def.items.count > 1, def.items.allSatisfy({ !$0.contains("<") && $0.count <= 80 }) {
                 // Short plain glosses read best on one line: barrier | obstacle | hurdle.
                 html += "<div class=\"gloss single inline\">" + def.items.joined(separator: "<span class=\"sep\"> | </span>") + "</div>"
@@ -70,7 +72,7 @@ enum ResultsPage {
             } else {
                 html += "<ol class=\"gloss\">" + def.items.map { "<li>\($0)</li>" }.joined() + "</ol>"
             }
-            html += "</section>"
+            html += closed ? "</details>" : "</section>"
         }
         return html + "</article>"
     }
@@ -179,6 +181,10 @@ enum ResultsPage {
     .tags { display:flex; flex-wrap:wrap; gap:4px; margin:2px 0 6px; }
     .tag { font-size:11px; padding:1px 6px; border-radius:4px; background:color-mix(in srgb, var(--fg) 12%, transparent); color:var(--muted); }
     .inline .sep { color:var(--muted); }
+    details.dict.closed > summary { list-style:none; color:var(--muted); }
+    details.dict.closed > summary::-webkit-details-marker { display:none; }
+    details.dict.closed > summary::after { content:" ▸"; }
+    details.dict.closed[open] > summary::after { content:" ▾"; }
     .freq { font-size:12px; border:1px solid var(--rule); border-radius:6px; padding:1px 6px; }
     .freq-name { color:var(--muted); margin-right:6px; }
     .chain { font: 12px ui-monospace, Menlo, monospace; color:var(--accent); margin-bottom:10px; }

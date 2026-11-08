@@ -51,6 +51,15 @@ final class StoreAndImportTests: XCTestCase {
         XCTAssertEqual(GlossaryText.items(fromJSON: hits[0].entry.glossaryJSON), ["cat"])
     }
 
+    func testHiraganaFindsKatakanaReadings() throws {
+        let store = try DictionaryStore(path: ":memory:")
+        let files = ["term_bank_1.json": #"[["イタリア語","イタリアご","n","",0,["Italian"],1,""],["アルバトロス","","n","",0,["albatross"],2,""]]"#]
+        _ = try YomitanImporter.importDictionary(at: try makeZip(title: "K", files: files), into: store)
+        try store.buildMissingKanaIndexes()
+        XCTAssertEqual(TextScanner().scan("いたりあご", in: store).first?.entry.expression, "イタリア語")
+        XCTAssertEqual(TextScanner().scan("あるばとろす", in: store).first?.entry.expression, "アルバトロス")
+    }
+
     func testSecondImportOfSameTitleIsRejectedAndLeavesNothing() throws {
         let store = try DictionaryStore(path: ":memory:")
         _ = try YomitanImporter.importDictionary(at: try makeZip(title: "A", files: jmdict), into: store)

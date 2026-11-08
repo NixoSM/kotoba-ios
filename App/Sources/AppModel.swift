@@ -187,6 +187,11 @@ final class AppModel {
                 let pct = p.total > 0 ? min(100, p.done * 100 / p.total) : 0
                 Task { @MainActor in self?.reverseIndexStatus = "Preparo la ricerca per significato in \(p.dictionaryTitle): \(pct)%" }
             }
+            await MainActor.run { self?.reverseIndexStatus = "Preparo la ricerca in kana…" }
+            try? store.buildMissingKanaIndexes { p in
+                let pct = p.total > 0 ? min(100, p.done * 100 / p.total) : 0
+                Task { @MainActor in self?.reverseIndexStatus = "Preparo la ricerca in kana (イタリアご = いたりあご) in \(p.dictionaryTitle): \(pct)%" }
+            }
             await MainActor.run { self?.reverseIndexStatus = nil }
         }
     }

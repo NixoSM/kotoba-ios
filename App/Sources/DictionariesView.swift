@@ -28,7 +28,26 @@ struct DictionariesView: View {
                                 Text("\(dict.termCount.formatted()) voci · \(dict.metaCount.formatted()) frequenze/accenti · rev. \(dict.revision)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                if model.settings.collapsedDictionaries.contains(dict.title) {
+                                    Label("Chiuso nei risultati", systemImage: "chevron.right.circle")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
+                        }
+                        .swipeActions(edge: .leading) {
+                            let closed = model.settings.collapsedDictionaries.contains(dict.title)
+                            Button(closed ? "Apri" : "Chiudi") {
+                                if closed {
+                                    model.settings.collapsedDictionaries.remove(dict.title)
+                                } else {
+                                    model.settings.collapsedDictionaries.insert(dict.title)
+                                }
+                            }
+                            .tint(.orange)
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button("Elimina", role: .destructive) { model.delete(dict) }
                         }
                     }
                     .onMove { model.move(from: $0, to: $1) }
@@ -36,7 +55,7 @@ struct DictionariesView: View {
                 } header: {
                     Text("Ordine dei risultati")
                 } footer: {
-                    Text("Trascina per cambiare l'ordine in cui i dizionari compaiono nei risultati. Scorri a sinistra per eliminare.")
+                    Text("Trascina per cambiare l'ordine in cui i dizionari compaiono nei risultati. Scorri verso destra per mostrare un dizionario chiuso nei risultati (si apre toccandone il nome), verso sinistra per eliminarlo.")
                 }
             }
             .navigationTitle("Dizionari")

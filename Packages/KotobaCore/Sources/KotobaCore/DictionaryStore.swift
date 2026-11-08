@@ -24,7 +24,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     private let db: SQLiteDatabase
     private let lock = NSLock()
 
-    public static let schemaVersion = 4
+    public static let schemaVersion = 5
 
     /// Pass `":memory:"` for a throwaway store (tests).
     public init(path: String) throws {
@@ -71,6 +71,19 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         CREATE INDEX IF NOT EXISTS term_meta_dict ON term_meta(dict_id);
         """)
         try migrate()
+        try db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'terms_reading_hira'").rows { _ in kanaIndexReady = true }
+    }
+
+    /// Readings stored in hiragana too (イタリアご → いたりあご), so that
+    /// kana typed either way finds the word. The index is built in the
+    /// background the first time; until then lookups skip it.
+    private var kanaIndexReady = false
+
+    /// Hiragana form of a reading, or nil when it is already hiragana.
+    static func hiraganaReading(expression: String, reading: String) -> String? {
+        let source = reading.isEmpty ? expression : reading
+        let hira = Kana.toHiragana(source)
+        return hira == source ? nil : hira
     }
 
     private func migrate() throws {
@@ -97,6 +110,13 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
                 data BLOB NOT NULL,
                 PRIMARY KEY (dict_id, path)
             ) WITHOUT ROWID;
+            """)
+        }
+        if version < 5 {
+            // v5: hiragana copy of katakana readings (the index is created later, off the main thread).
+            try db.execute("""
+            ALTER TABLE terms ADD COLUMN reading_hira TEXT;
+            ALTER TABLE dictionaries ADD COLUMN kana_indexed INTEGER NOT NULL DEFAULT 0;
             """)
         }
         try db.execute("PRAGMA user_version = \(Self.schemaVersion)")
@@ -192,8 +212,8 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
             self.db = db
             self.dictID = dictID
             insertTerm = try db.prepare("""
-            INSERT INTO terms (dict_id, expression, reading, rules, score, definition_tags, term_tags, sequence, glossary)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            INSERT INTO terms (dict_id, expression, reading, rules, score, definition_tags, term_tags, sequence, glossary, reading_hira)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
             """)
             insertMeta = try db.prepare("INSERT INTO term_meta (dict_id, expression, kind, data) VALUES (?1, ?2, ?3, ?4)")
             insertFTS = try db.prepare("INSERT INTO gloss_fts (rowid, text) VALUES (?1, ?2)")
@@ -204,7 +224,8 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
             for t in terms {
                 try insertTerm.bind(dictID, t.expression, t.reading, Int(t.rules.rawValue), t.score,
                                     t.definitionTags.joined(separator: " "), t.termTags.joined(separator: " "),
-                                    t.sequence, t.glossaryJSON).run()
+                                    t.sequence, t.glossaryJSON,
+                                    DictionaryStore.hiraganaReading(expression: t.expression, reading: t.reading)).run()
                 let text = ReverseSearch.indexText(fromGlossaryJSON: t.glossaryJSON)
                 if !text.isEmpty { try insertFTS.bind(db.lastInsertRowID, text).run() }
             }
@@ -242,7 +263,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
 
                 let session = try ImportSession(db: db, dictID: id)
                 try body(session)
-                try db.prepare("UPDATE dictionaries SET term_count = ?1, meta_count = ?2, reverse_indexed = 1 WHERE id = ?3")
+                try db.prepare("UPDATE dictionaries SET term_count = ?1, meta_count = ?2, reverse_indexed = 1, kana_indexed = 1 WHERE id = ?3")
                     .bind(session.termCount, session.metaCount, id).run()
                 return InstalledDictionary(id: id, title: index.title, revision: index.revision, priority: priority,
                                            enabled: true, termCount: session.termCount, metaCount: session.metaCount)
@@ -285,6 +306,49 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
                         if let last = rows.last { lastID = last.0 }
                         if rows.isEmpty {
                             try db.prepare("UPDATE dictionaries SET reverse_indexed = 1 WHERE id = ?1").bind(dict.id).run()
+                        }
+                        return rows.count
+                    }
+                }
+                if batch == 0 { break }
+                done += batch
+                progress(ReverseIndexProgress(dictionaryTitle: dict.title, done: done, total: dict.total))
+            }
+        }
+    }
+
+    /// Fills the hiragana readings of dictionaries imported before 0.6 and
+    /// creates their index. Runs once, in small batches.
+    public func buildMissingKanaIndexes(progress: (ReverseIndexProgress) -> Void = { _ in }) throws {
+        try locked {
+            try db.execute("CREATE INDEX IF NOT EXISTS terms_reading_hira ON terms(reading_hira) WHERE reading_hira IS NOT NULL")
+            kanaIndexReady = true
+        }
+        let pending: [(id: Int64, title: String, total: Int)] = try locked {
+            var out: [(id: Int64, title: String, total: Int)] = []
+            try db.prepare("SELECT id, title, term_count FROM dictionaries WHERE kana_indexed = 0").rows {
+                out.append((id: $0.int64(0), title: $0.string(1), total: $0.int(2)))
+            }
+            return out
+        }
+        for dict in pending {
+            var lastID: Int64 = 0
+            var done = 0
+            while true {
+                let batch: Int = try locked {
+                    try db.transaction {
+                        var rows: [(Int64, String, String)] = []
+                        try db.prepare("SELECT id, expression, reading FROM terms WHERE dict_id = ?1 AND id > ?2 ORDER BY id LIMIT 8000")
+                            .bind(dict.id, lastID).rows { rows.append(($0.int64(0), $0.string(1), $0.string(2))) }
+                        let update = try db.prepare("UPDATE terms SET reading_hira = ?1 WHERE id = ?2")
+                        for (id, expression, reading) in rows {
+                            if let hira = Self.hiraganaReading(expression: expression, reading: reading) {
+                                try update.bind(hira, id).run()
+                            }
+                        }
+                        if let last = rows.last { lastID = last.0 }
+                        if rows.isEmpty {
+                            try db.prepare("UPDATE dictionaries SET kana_indexed = 1 WHERE id = ?1").bind(dict.id).run()
                         }
                         return rows.count
                     }
@@ -485,7 +549,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
                 try cached("""
                 SELECT \(Self.headerColumns(glossary: glossary))
                 FROM terms t JOIN dictionaries d ON d.id = t.dict_id
-                WHERE d.enabled = 1 AND (t.expression = ?1 OR t.reading = ?1)
+                WHERE d.enabled = 1 AND (t.expression = ?1 OR t.reading = ?1\(kanaIndexReady ? " OR t.reading_hira = ?1" : ""))
                 ORDER BY d.priority, t.score DESC
                 """).bind(term).rows { out.append(Self.entry($0)) }
             } catch {
