@@ -31,6 +31,8 @@ public struct TermEntry: Hashable, Sendable {
     public var glossaryJSON: Data
     public var sequence: Int?
     public var termTags: [String]
+    /// Title of the dictionary the entry came from (filled in by the store).
+    public var dictionary: String = ""
 }
 
 public enum TermMetaKind: String, Sendable {

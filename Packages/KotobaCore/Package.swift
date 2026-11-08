@@ -7,8 +7,11 @@ let package = Package(
     products: [
         .library(name: "KotobaCore", targets: ["KotobaCore"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/weichsel/ZIPFoundation.git", from: "0.9.19"),
+    ],
     targets: [
-        .target(name: "KotobaCore"),
-        .testTarget(name: "KotobaCoreTests", dependencies: ["KotobaCore"]),
+        .target(name: "KotobaCore", dependencies: ["ZIPFoundation"]),
+        .testTarget(name: "KotobaCoreTests", dependencies: ["KotobaCore", "ZIPFoundation"]),
     ]
 )

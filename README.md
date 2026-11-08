@@ -4,7 +4,7 @@ Dizionario giapponese per iPhone ispirato a Yomitan: dizionari impilabili,
 aspetto personalizzabile, import dei backup Yomitan, ricerca EN/IT→JP,
 mining su Anki e fotocamera con OCR.
 
-Stato: **0.1** — motore di de-coniugazione e prima app di prova. Nessun dizionario ancora.
+Stato: **0.2** — import di dizionari Yomitan (.zip), ordine e attivazione dei dizionari, ricerca giapponese con de-coniugazione.
 
 ## Struttura
 
