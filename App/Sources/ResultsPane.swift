@@ -32,6 +32,15 @@ struct ResultsPane: View {
             if let q = value("q") { onSearch(q) }
         case "lookup":
             if let t = value("t") { onLookup(Lookup(text: t, sentence: value("s") ?? t)) }
+        case "audio":
+            guard let e = value("e"), let r = value("r") else { return }
+            Task {
+                switch await WordAudio.shared.play(expression: e, reading: r) {
+                case .played: break
+                case .notFound: model.toast = "Nessuna registrazione per \(e)"
+                case .failed: model.toast = "Audio non disponibile (sei online?)"
+                }
+            }
         case "mine":
             if let section = value("s"), let i = value("i").flatMap(Int.init), let group = outcome.group(section: section, index: i) {
                 model.mine(group, sentence: outcome.sentence)

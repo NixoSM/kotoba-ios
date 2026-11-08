@@ -40,6 +40,8 @@ enum ResultsPage {
 
     private static func entry(_ g: HeadwordGroup, link: String?, mined: Bool) -> String {
         var html = "<article class=\"entry\"><header>"
+        let audio = "kotoba://audio?e=\(percent(g.expression))&r=\(percent(g.reading))"
+        html += "<a class=\"audio\" href=\"\(audio)\" aria-label=\"Ascolta\">▶︎</a>"
         if let link {
             html += mined
                 ? "<a class=\"mine done\" href=\"\(link)\" aria-label=\"Già in Anki\">✓</a>"
@@ -76,6 +78,10 @@ enum ResultsPage {
             }.joined() + "</div>"
         }
         return html
+    }
+
+    private static func percent(_ s: String) -> String {
+        s.addingPercentEncoding(withAllowedCharacters: CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")) ?? ""
     }
 
     /// Short stable id for a dictionary title, safe inside a CSS selector.
@@ -133,12 +139,16 @@ enum ResultsPage {
     .note { font-size:12px; color:var(--muted); margin:0 0 12px; }
     .entry { margin: 0 0 30px; }
     header { position:relative; }
-    .headword { font: 600 40px/1.25 "Hiragino Mincho ProN", serif; margin:0 0 6px; padding-right:52px; }
+    .headword { font: 600 40px/1.25 "Hiragino Mincho ProN", serif; margin:0 0 6px; padding-right:100px; }
     .headword rt { font: 400 13px "Hiragino Mincho ProN", serif; color:var(--muted); letter-spacing:.05em; }
     .mine { position:absolute; right:0; top:10px; width:40px; height:40px; border-radius:20px;
             display:flex; align-items:center; justify-content:center; font-size:22px;
             border:1px solid var(--rule); color:var(--accent); }
     .mine.done { color:var(--muted); }
+    .audio { position:absolute; right:48px; top:10px; width:40px; height:40px; border-radius:20px;
+             display:flex; align-items:center; justify-content:center; font-size:15px;
+             border:1px solid var(--rule); color:var(--fg); }
+    .audio.playing { color:var(--accent); border-color:var(--accent); }
     .pitches { font-size:15px; margin:2px 0 6px; }
     .pitches ol { margin:0; padding-left:1.3em; }
     .pitch { letter-spacing:.02em; }
