@@ -35,6 +35,7 @@ targets:
           - CFBundleURLName: com.nixosm.kotoba
             CFBundleURLSchemes: [kotoba]
         LSApplicationQueriesSchemes: [anki]
+        # Italian here; English and Japanese in App/Resources/*.lproj/InfoPlist.strings.
         NSCameraUsageDescription: "Kotoba usa la fotocamera per leggere il testo giapponese e cercarlo nel dizionario."
         NSPhotoLibraryUsageDescription: "Kotoba legge il testo giapponese dalle immagini che scegli."
         NSLocalNetworkUsageDescription: "Kotoba riceve dal tuo PC il testo del gioco che stai leggendo (Textractor) sulla stessa Wi-Fi."
@@ -102,6 +103,8 @@ targets:
       - Extensions/Widgets
       - App/Shared/SharedStorage.swift
       - App/Shared/KotobaIntents.swift
+      # Names and descriptions of the controls in en/ja (Localizable.strings).
+      - App/Shared/Localization
     info:
       path: Extensions/Widgets/Info.plist
       properties:

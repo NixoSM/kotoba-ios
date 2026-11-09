@@ -18,6 +18,7 @@ enum AppLanguage: String, Codable, CaseIterable, Identifiable {
 
 /// Translates the app's Italian strings. Italian is the source text and the
 /// key; English and Japanese live in `table`. Placeholders are {0}, {1}…
+/// CI runs tools/check_translations.py: a key missing here fails the build.
 func tr(_ italian: String, _ args: Any...) -> String {
     var text = italian
     switch L10n.current {
@@ -230,18 +231,18 @@ enum L10n {
              "どのアプリでも文字を選択して「共有」→「Kotoba」をタップすると、読んでいるアプリを離れずにパネルで意味が表示されます。"),
         "Centro di Controllo": ("Control Center", "コントロールセンター"),
         "Apri il Centro di Controllo, tieni premuto su uno spazio vuoto, tocca «Aggiungi un controllo» e cerca Kotoba: «Cerca appunti» e «Lente».":
-            ("Open Control Center, press and hold an empty space, tap “Add a Control” and search for Kotoba: “Cerca appunti” and “Lente”.",
-             "コントロールセンターを開き、空いた場所を長押しして「コントロールを追加」から Kotoba を検索：「Cerca appunti」と「Lente」。"),
+            ("Open Control Center, press and hold an empty space, tap “Add a Control” and search for Kotoba: “Search Clipboard” and “Lens”.",
+             "コントロールセンターを開き、空いた場所を長押しして「コントロールを追加」から Kotoba を検索：「クリップボード検索」と「レンズ」。"),
         "Schermata di blocco": ("Lock Screen", "ロック画面"),
         "Tieni premuto sulla schermata di blocco, tocca Personalizza › Schermata di blocco e sostituisci la torcia o la fotocamera con un controllo di Kotoba.":
             ("Press and hold the Lock Screen, tap Customize › Lock Screen and replace the flashlight or camera with a Kotoba control.",
              "ロック画面を長押しして「カスタマイズ」›「ロック画面」をタップし、ライトやカメラを Kotoba のコントロールに置き換えます。"),
         "Doppio tocco sul retro": ("Back Tap", "背面タップ"),
         "1. Nell'app Comandi Rapidi crea un comando con l'azione Kotoba «Cerca negli appunti». 2. Impostazioni › Accessibilità › Tocco › Tocca il retro › Doppio tocco: scegli quel comando. Poi copia una parola e tocca due volte il retro dell'iPhone.":
-            ("1. In the Shortcuts app, create a shortcut with the Kotoba action “Cerca negli appunti”. 2. Settings › Accessibility › Touch › Back Tap › Double Tap: choose that shortcut. Then copy a word and double-tap the back of the iPhone.",
-             "1. ショートカットアプリで Kotoba のアクション「Cerca negli appunti」を使ったショートカットを作成。2. 設定 › アクセシビリティ › タッチ › 背面タップ › ダブルタップでそのショートカットを選択。あとは単語をコピーして iPhone の背面を2回タップ。"),
+            ("1. In the Shortcuts app, create a shortcut with the Kotoba action “Search Clipboard”. 2. Settings › Accessibility › Touch › Back Tap › Double Tap: choose that shortcut. Then copy a word and double-tap the back of the iPhone.",
+             "1. ショートカットアプリで Kotoba のアクション「クリップボードを検索」を使ったショートカットを作成。2. 設定 › アクセシビリティ › タッチ › 背面タップ › ダブルタップでそのショートカットを選択。あとは単語をコピーして iPhone の背面を2回タップ。"),
         "«Cerca gli appunti in Kotoba» oppure «Apri la lente di Kotoba».":
-            ("“Search clipboard in Kotoba” or “Open Kotoba lens”.", "「Search clipboard in Kotoba」または「Open Kotoba lens」。"),
+            ("“Search clipboard in Kotoba” or “Open Kotoba lens”.", "「Kotobaでクリップボードを検索」または「Kotobaのレンズを開く」。"),
         "Dagli appunti": ("From the clipboard", "クリップボードから"),
         "Negli appunti non c'è testo": ("There's no text on the clipboard", "クリップボードに文字がありません"),
         "Apri in Kotoba": ("Open in Kotoba", "Kotoba で開く"),

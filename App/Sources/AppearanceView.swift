@@ -118,9 +118,12 @@ struct AppearanceView: View {
         g.partsOfSpeech = ["n"]
         g.definitions = [
             ("JMdict (Legacy)", ["word", "phrase", "expression", "language"]),
-            ("小学館 和伊中辞典 第2版", ["parola, vocabolo; (言語) lingua; (表現) espressione"]),
             ("大辞林 第四版", ["①人が声に出して言ったり文字に書いて表したりする、意味のある表現。<br>「―を交わす」"]),
         ]
+        // The Italian sample dictionary only in the Italian app.
+        if L10n.current == .it {
+            g.definitions.insert(("小学館 和伊中辞典 第2版", ["parola, vocabolo; (言語) lingua; (表現) espressione"]), at: 1)
+        }
         g.frequencies = [FrequencyInfo(dictionary: "JPDB", value: 312, display: "312"),
                          FrequencyInfo(dictionary: "BCCWJ", value: 845, display: "845")]
         g.pitches = [PitchInfo(dictionary: "アクセント辞典", reading: "ことば", positions: [3])]

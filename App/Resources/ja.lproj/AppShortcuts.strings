@@ -1,0 +1,5 @@
+/* Siri and Shortcuts phrases. Keys are the phrases in KotobaShortcuts.swift; every phrase must keep ${applicationName}. */
+"Cerca gli appunti in ${applicationName}" = "${applicationName}でクリップボードを検索";
+"Search clipboard in ${applicationName}" = "${applicationName}でコピーした語を調べる";
+"Apri la lente di ${applicationName}" = "${applicationName}のレンズを開く";
+"Open ${applicationName} lens" = "${applicationName}でレンズを開く";

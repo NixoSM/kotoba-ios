@@ -7,6 +7,14 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Fails if any text would still show in Italian in the English or Japanese app.
+  translations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check English and Japanese translations
+        run: python3 tools/check_translations.py
+
   test-core:
     runs-on: macos-latest
     steps:
@@ -31,7 +39,7 @@ jobs:
           retention-days: 7
 
   build-ipa:
-    needs: test-core
+    needs: [test-core, translations]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
