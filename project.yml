@@ -42,8 +42,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.nixosm.kotoba
         CODE_SIGN_ENTITLEMENTS: Entitlements/Kotoba.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        MARKETING_VERSION: "0.10.0"
-        CURRENT_PROJECT_VERSION: "10"
+        MARKETING_VERSION: "0.11.0"
+        CURRENT_PROJECT_VERSION: "11"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.0"
   # "Kotoba" in the Share sheet: select text anywhere → Share → Kotoba.
@@ -90,8 +90,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.nixosm.kotoba.share
         CODE_SIGN_ENTITLEMENTS: Entitlements/KotobaShare.entitlements
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) KOTOBA_EXTENSION"
-        MARKETING_VERSION: "0.10.0"
-        CURRENT_PROJECT_VERSION: "10"
+        MARKETING_VERSION: "0.11.0"
+        CURRENT_PROJECT_VERSION: "11"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.0"
   # Control Center and Lock Screen buttons (iOS 18+).
@@ -115,7 +115,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nixosm.kotoba.widgets
         CODE_SIGN_ENTITLEMENTS: Entitlements/KotobaWidgets.entitlements
-        MARKETING_VERSION: "0.10.0"
-        CURRENT_PROJECT_VERSION: "10"
+        MARKETING_VERSION: "0.11.0"
+        CURRENT_PROJECT_VERSION: "11"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.0"

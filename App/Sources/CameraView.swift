@@ -459,46 +459,62 @@ extension UIImage {
 // MARK: - Lens
 
 /// Live camera: the word under the crosshair is looked up as you move the phone.
+/// Vision reads a band around the crosshair and gives a box for every
+/// character, so the lookup starts exactly at the character under the dot.
+/// Pause freezes the picture into a photo you can tap or select (vertical text too).
 private struct LensView: View {
     @Environment(AppModel.self) private var model
     let onLookup: (Lookup) -> Void
     let onSearch: (String) -> Void
 
+    @State private var lens = LensController()
     @State private var query = ""
     @State private var sentence = ""
     @State private var outcome = AppModel.SearchOutcome()
-    @State private var frozen = false
+    @State private var frozen: UIImage?
+    @State private var selecting = false
     @State private var cameraAllowed: Bool?
 
     var body: some View {
-        if !LensScanner.available {
-            ContentUnavailableView(tr("La lente non è disponibile"), systemImage: "camera.viewfinder",
-                                   description: Text(tr("Questo iPhone non riconosce il giapponese dal vivo. Usa la modalità Foto.")))
-        } else if cameraAllowed == false {
+        if cameraAllowed == false {
             ContentUnavailableView(tr("Serve la fotocamera"), systemImage: "camera",
                                    description: Text(tr("Consenti l'accesso in Impostazioni › App › Kotoba › Fotocamera.")))
         } else {
             VStack(spacing: 0) {
                 ZStack {
-                    if cameraAllowed == true {
-                        LensScanner(frozen: frozen) { text, line in
+                    if let frozen {
+                        PhotoReader(image: frozen, selecting: selecting, highlightLength: matched) { text, line in
                             query = text
                             sentence = line
                         }
+                        .overlay(alignment: .top) {
+                            Picker("", selection: $selecting) {
+                                Text(tr("Tocca")).tag(false)
+                                Text(tr("Seleziona")).tag(true)
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 200)
+                            .padding(6)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .padding(.top, 8)
+                        }
+                    } else if cameraAllowed == true {
+                        LiveReader(controller: lens, highlightLength: matched) { text, line in
+                            query = text
+                            sentence = line
+                        }
+                        Reticle()
                     } else {
                         Color.black
                     }
-                    Reticle()
                     VStack {
                         Spacer()
                         HStack {
                             Spacer()
-                            Button {
-                                frozen.toggle()
-                            } label: {
-                                Image(systemName: frozen ? "play.fill" : "pause.fill")
+                            Button(action: toggleFreeze) {
+                                Image(systemName: frozen == nil ? "pause.fill" : "play.fill")
                                     .font(.title3)
-                                    .frame(width: 48, height: 48)
+                                    .frame(width: 52, height: 52)
                                     .background(.ultraThinMaterial, in: Circle())
                             }
                             .tint(.white)
@@ -509,7 +525,9 @@ private struct LensView: View {
                 .clipped()
                 Group {
                     if outcome.direct.isEmpty && outcome.byMeaning.isEmpty {
-                        Text(tr("Inquadra una parola con il mirino. Tocca ⏸ per fermare l'immagine e leggere con calma."))
+                        Text(frozen == nil
+                             ? tr("Metti il punto rosso sul primo carattere della parola. Con ⏸ fermi l'immagine: poi tocchi le parole, o usi Seleziona per il testo verticale.")
+                             : tr("Tocca una parola. Per il testo verticale usa Seleziona."))
                             .font(.subheadline)
                             .foregroundStyle(Palette.muted)
                             .multilineTextAlignment(.center)
@@ -529,16 +547,31 @@ private struct LensView: View {
                 default: cameraAllowed = false
                 }
             }
+            .onAppear { if frozen == nil { lens.start() } }
+            .onDisappear { lens.stop() }
             .task(id: query) {
                 let text = query
                 guard !text.isEmpty else { return }
-                try? await Task.sleep(for: .milliseconds(250))
+                try? await Task.sleep(for: .milliseconds(150))
                 guard !Task.isCancelled else { return }
                 var result = await model.search(text)
-                guard !result.direct.isEmpty else { return }
+                guard !result.direct.isEmpty || frozen != nil else { return }
                 result.sentence = sentence
                 outcome = result
             }
+        }
+    }
+
+    private var matched: Int { outcome.direct.first?.matchedText.count ?? 0 }
+
+    private func toggleFreeze() {
+        if frozen != nil {
+            frozen = nil
+            selecting = false
+            lens.start()
+        } else if let still = lens.snapshot() {
+            lens.stop()
+            frozen = still
         }
     }
 }
@@ -546,99 +579,291 @@ private struct LensView: View {
 private struct Reticle: View {
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(.white, lineWidth: 2)
-                .frame(width: 60, height: 60)
-                .shadow(color: .black.opacity(0.4), radius: 4)
-            Circle().fill(Palette.shu).frame(width: 6, height: 6)
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(.white.opacity(0.9), lineWidth: 1.5)
+                .frame(width: 44, height: 44)
+                .shadow(color: .black.opacity(0.4), radius: 3)
+            Circle().fill(Palette.shu).frame(width: 7, height: 7)
+                .overlay(Circle().stroke(.white, lineWidth: 1))
         }
         .allowsHitTesting(false)
     }
 }
 
-/// VisionKit's live text scanner; reports the text under the centre of the view.
-private struct LensScanner: UIViewControllerRepresentable {
-    static var available: Bool {
-        DataScannerViewController.isSupported
-            && DataScannerViewController.supportedTextRecognitionLanguages.contains { $0.hasPrefix("ja") }
-    }
+/// Lets the SwiftUI view start, stop and photograph the live reader.
+@MainActor
+final class LensController {
+    fileprivate weak var view: LiveReaderView?
+    private var wantsRunning = false
 
-    var frozen: Bool
+    func start() { wantsRunning = true; view?.start() }
+    func stop() { wantsRunning = false; view?.stop() }
+    func snapshot() -> UIImage? { view?.snapshot() }
+
+    fileprivate func attach(_ view: LiveReaderView) {
+        self.view = view
+        if wantsRunning { view.start() }
+    }
+}
+
+private struct LiveReader: UIViewRepresentable {
+    let controller: LensController
+    var highlightLength: Int
     let onRead: (String, String) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onRead: onRead) }
-
-    func makeUIViewController(context: Context) -> DataScannerViewController {
-        let scanner = DataScannerViewController(recognizedDataTypes: [.text(languages: ["ja-JP"])],
-                                                qualityLevel: .accurate,
-                                                recognizesMultipleItems: true,
-                                                isHighFrameRateTrackingEnabled: false,
-                                                isPinchToZoomEnabled: true,
-                                                isGuidanceEnabled: false,
-                                                isHighlightingEnabled: false)
-        scanner.delegate = context.coordinator
-        return scanner
+    func makeUIView(context: Context) -> LiveReaderView {
+        let view = LiveReaderView()
+        view.onRead = onRead
+        controller.attach(view)
+        return view
     }
 
-    func updateUIViewController(_ scanner: DataScannerViewController, context: Context) {
-        context.coordinator.onRead = onRead
-        if frozen {
-            if scanner.isScanning { scanner.stopScanning() }
-        } else if !scanner.isScanning {
-            try? scanner.startScanning()
+    func updateUIView(_ view: LiveReaderView, context: Context) {
+        view.onRead = onRead
+        view.highlightLength = highlightLength
+    }
+
+    static func dismantleUIView(_ view: LiveReaderView, coordinator: ()) {
+        view.stop()
+    }
+}
+
+/// Camera preview plus Vision text recognition around the centre.
+final class LiveReaderView: UIView, AVCaptureVideoDataOutputSampleBufferDelegate {
+    override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
+    private var preview: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+
+    var onRead: ((String, String) -> Void)?
+    var highlightLength = 1 { didSet { if highlightLength != oldValue { redraw() } } }
+
+    private let session = AVCaptureSession()
+    private let queue = DispatchQueue(label: "kotoba.lens")
+    private var device: AVCaptureDevice?
+    private var configured = false
+    private let outlines = CAShapeLayer()
+    private let marked = CAShapeLayer()
+
+    // Main thread state.
+    private var lines: [OCRLine] = []
+    private var hit: (line: Int, index: Int)?
+    private var imageSize = CGSize(width: 1080, height: 1920)
+    private var lastQuery = ""
+    private var latestFrame: CVPixelBuffer?
+
+    // Capture queue state.
+    nonisolated(unsafe) private var busy = false
+    nonisolated(unsafe) private var lastRun: CFTimeInterval = 0
+    nonisolated(unsafe) private var regionOfInterest = CGRect(x: 0.05, y: 0.35, width: 0.9, height: 0.3)
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .black
+        preview.videoGravity = .resizeAspectFill
+        preview.session = session
+        outlines.fillColor = UIColor.clear.cgColor
+        outlines.strokeColor = UIColor.white.withAlphaComponent(0.45).cgColor
+        outlines.lineWidth = 1
+        outlines.lineDashPattern = [3, 3]
+        marked.fillColor = UIColor(Palette.shu).withAlphaComponent(0.3).cgColor
+        marked.strokeColor = UIColor(Palette.shu).cgColor
+        marked.lineWidth = 2
+        layer.addSublayer(outlines)
+        layer.addSublayer(marked)
+        addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:))))
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func start() {
+        if !configured { configure() }
+        let session = session
+        queue.async { if !session.isRunning { session.startRunning() } }
+    }
+
+    func stop() {
+        let session = session
+        queue.async { if session.isRunning { session.stopRunning() } }
+    }
+
+    private func configure() {
+        configured = true
+        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+              let input = try? AVCaptureDeviceInput(device: camera) else { return }
+        device = camera
+        session.beginConfiguration()
+        session.sessionPreset = .hd1920x1080
+        if session.canAddInput(input) { session.addInput(input) }
+        let output = AVCaptureVideoDataOutput()
+        output.alwaysDiscardsLateVideoFrames = true
+        output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+        output.setSampleBufferDelegate(self, queue: queue)
+        if session.canAddOutput(output) { session.addOutput(output) }
+        // Portrait frames, so Vision's coordinates match the screen.
+        if let connection = output.connection(with: .video), connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
+        }
+        if let connection = preview.connection, connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
+        }
+        session.commitConfiguration()
+        if (try? camera.lockForConfiguration()) != nil {
+            if camera.isFocusModeSupported(.continuousAutoFocus) { camera.focusMode = .continuousAutoFocus }
+            if camera.isFocusPointOfInterestSupported { camera.focusPointOfInterest = CGPoint(x: 0.5, y: 0.5) }
+            if camera.isAutoFocusRangeRestrictionSupported { camera.autoFocusRangeRestriction = .near }
+            camera.unlockForConfiguration()
         }
     }
 
-    static func dismantleUIViewController(_ scanner: DataScannerViewController, coordinator: Coordinator) {
-        scanner.stopScanning()
+    @objc private func pinched(_ gesture: UIPinchGestureRecognizer) {
+        guard let device, gesture.state == .changed, (try? device.lockForConfiguration()) != nil else { return }
+        let zoom = device.videoZoomFactor * gesture.scale
+        device.videoZoomFactor = min(max(1, zoom), min(6, device.activeFormat.videoMaxZoomFactor))
+        device.unlockForConfiguration()
+        gesture.scale = 1
     }
 
-    @MainActor
-    final class Coordinator: NSObject, DataScannerViewControllerDelegate {
-        var onRead: (String, String) -> Void
-        private var last = ""
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        outlines.frame = bounds
+        marked.frame = bounds
+        updateRegion()
+        redraw()
+    }
 
-        init(onRead: @escaping (String, String) -> Void) { self.onRead = onRead }
+    // MARK: Geometry
 
-        func dataScanner(_ dataScanner: DataScannerViewController, didAdd addedItems: [RecognizedItem], allItems: [RecognizedItem]) {
-            pick(in: dataScanner, items: allItems)
-        }
+    /// The image as shown (aspect fill), in view coordinates.
+    private var shownImageRect: CGRect {
+        let scale = max(bounds.width / imageSize.width, bounds.height / imageSize.height)
+        let size = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        return CGRect(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2,
+                      width: size.width, height: size.height)
+    }
 
-        func dataScanner(_ dataScanner: DataScannerViewController, didUpdate updatedItems: [RecognizedItem], allItems: [RecognizedItem]) {
-            pick(in: dataScanner, items: allItems)
-        }
+    /// Vision box (normalized, origin bottom-left) to view rect.
+    private func viewRect(_ box: CGRect) -> CGRect {
+        let r = shownImageRect
+        return CGRect(x: r.minX + box.minX * r.width, y: r.minY + (1 - box.maxY) * r.height,
+                      width: box.width * r.width, height: box.height * r.height)
+    }
 
-        /// Finds the character under the crosshair: projects the centre onto
-        /// each line's reading direction (the longer side, so vertical text works).
-        private func pick(in scanner: DataScannerViewController, items: [RecognizedItem]) {
-            let c = CGPoint(x: scanner.view.bounds.midX, y: scanner.view.bounds.midY)
-            var best: (chars: [Character], index: Int, distance: CGFloat)?
-            for item in items {
-                guard case .text(let text) = item else { continue }
-                let chars = Array(text.transcript)
-                guard !chars.isEmpty else { continue }
-                let q = item.bounds
-                var along = CGVector(dx: q.topRight.x - q.topLeft.x, dy: q.topRight.y - q.topLeft.y)
-                var across = CGVector(dx: q.bottomLeft.x - q.topLeft.x, dy: q.bottomLeft.y - q.topLeft.y)
-                let alongLength = hypot(along.dx, along.dy), acrossLength = hypot(across.dx, across.dy)
-                if acrossLength > alongLength * 1.5 && chars.count > 1 { swap(&along, &across) }
-                let a2 = along.dx * along.dx + along.dy * along.dy
-                let b2 = across.dx * across.dx + across.dy * across.dy
-                guard a2 > 1, b2 > 1 else { continue }
-                let v = CGVector(dx: c.x - q.topLeft.x, dy: c.y - q.topLeft.y)
-                let t = (v.dx * along.dx + v.dy * along.dy) / a2
-                let s = (v.dx * across.dx + v.dy * across.dy) / b2
-                let distance = max(0, -t, t - 1) * a2.squareRoot() + max(0, -s, s - 1) * b2.squareRoot()
-                if distance < (best?.distance ?? 30) {
-                    best = (chars, min(chars.count - 1, max(0, Int(t * CGFloat(chars.count)))), distance)
+    /// Read only a band around the crosshair: faster, and nothing off-screen.
+    private func updateRegion() {
+        let r = shownImageRect
+        guard r.width > 0, r.height > 0, bounds.height > 0 else { return }
+        let visibleWidth = min(1, bounds.width / r.width)
+        let bandHeight = min(1, bounds.height * 0.45 / r.height)
+        let region = CGRect(x: 0.5 - visibleWidth / 2, y: 0.5 - bandHeight / 2, width: visibleWidth, height: bandHeight)
+        queue.async { [weak self] in self?.regionOfInterest = region }
+    }
+
+    // MARK: Recognition
+
+    nonisolated func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        let now = CACurrentMediaTime()
+        guard !busy, now - lastRun > 0.2, let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        busy = true
+        lastRun = now
+        let region = regionOfInterest
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["ja-JP", "en-US"]
+        request.usesLanguageCorrection = false
+        request.regionOfInterest = region
+        try? VNImageRequestHandler(cvPixelBuffer: buffer, options: [:]).perform([request])
+        let found: [OCRLine] = (request.results ?? []).compactMap { observation in
+            guard let candidate = observation.topCandidates(1).first else { return nil }
+            let string = candidate.string
+            var chars: [Character] = []
+            var boxes: [CGRect] = []
+            var index = string.startIndex
+            while index < string.endIndex {
+                let next = string.index(after: index)
+                var box = (try? candidate.boundingBox(for: index..<next))?.boundingBox ?? .zero
+                if box != .zero {
+                    // Results are relative to the region of interest.
+                    box = CGRect(x: region.minX + box.minX * region.width, y: region.minY + box.minY * region.height,
+                                 width: box.width * region.width, height: box.height * region.height)
                 }
+                chars.append(string[index])
+                boxes.append(box)
+                index = next
             }
-            guard let best else { return }
-            let query = String(best.chars[best.index...].prefix(20))
-            guard query != last else { return }
-            last = query
-            onRead(query, String(best.chars))
+            return OCRLine(text: chars, boxes: boxes)
         }
+        let size = CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
+        nonisolated(unsafe) let frame = buffer
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.imageSize = size
+            self.latestFrame = frame
+            self.update(found)
+            self.queue.async { self.busy = false }
+        }
+    }
+
+    private func update(_ found: [OCRLine]) {
+        lines = found
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        var best: (line: Int, index: Int, distance: CGFloat)?
+        for (l, line) in found.enumerated() {
+            for (i, box) in line.boxes.enumerated() where box != .zero {
+                let rect = viewRect(box)
+                let dx = max(rect.minX - center.x, 0, center.x - rect.maxX)
+                let dy = max(rect.minY - center.y, 0, center.y - rect.maxY)
+                let distance = (dx * dx + dy * dy).squareRoot()
+                if distance < (best?.distance ?? 10) { best = (l, i, distance) }
+            }
+        }
+        if let best {
+            let line = found[best.line].text
+            let query = String(line[best.index...].prefix(20))
+            // Keep the highlight on the same word while it is still under the dot.
+            if query != lastQuery {
+                lastQuery = query
+                highlightLength = 1
+                onRead?(query, String(line))
+            }
+            hit = (best.line, best.index)
+        } else {
+            hit = nil
+        }
+        redraw()
+    }
+
+    private func redraw() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        let outlinePath = UIBezierPath()
+        for line in lines {
+            let frame = line.boxes.filter { $0 != .zero }.reduce(CGRect.null) { $0.union($1) }
+            if !frame.isNull { outlinePath.append(UIBezierPath(roundedRect: viewRect(frame).insetBy(dx: -2, dy: -2), cornerRadius: 3)) }
+        }
+        outlines.path = outlinePath.cgPath
+        let markedPath = UIBezierPath()
+        if let hit, lines.indices.contains(hit.line) {
+            let boxes = lines[hit.line].boxes
+            let end = min(boxes.count, hit.index + max(1, highlightLength))
+            let frame = boxes[hit.index..<end].filter { $0 != .zero }.reduce(CGRect.null) { $0.union($1) }
+            if !frame.isNull { markedPath.append(UIBezierPath(roundedRect: viewRect(frame).insetBy(dx: -2, dy: -2), cornerRadius: 3)) }
+        }
+        marked.path = markedPath.cgPath
+    }
+
+    /// The last frame, cropped to what is on screen.
+    func snapshot() -> UIImage? {
+        guard let frame = latestFrame else { return nil }
+        let image = CIImage(cvPixelBuffer: frame)
+        let r = shownImageRect
+        guard r.width > 0 else { return nil }
+        // Visible part in image pixels (CIImage origin is bottom-left).
+        let scale = imageSize.width / r.width
+        let visible = CGRect(x: -r.minX * scale, y: -r.minY * scale, width: bounds.width * scale, height: bounds.height * scale)
+        let crop = CGRect(x: visible.minX, y: imageSize.height - visible.maxY, width: visible.width, height: visible.height)
+            .intersection(image.extent)
+        guard let cg = CIContext().createCGImage(image, from: crop) else { return nil }
+        return UIImage(cgImage: cg)
     }
 }
 

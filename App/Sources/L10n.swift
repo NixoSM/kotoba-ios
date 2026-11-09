@@ -267,6 +267,11 @@ enum L10n {
         "Inquadra una parola con il mirino. Tocca ⏸ per fermare l'immagine e leggere con calma.":
             ("Aim the crosshair at a word. Tap ⏸ to freeze the picture and read calmly.", "照準を単語に合わせてください。⏸ で画面を止めてゆっくり読めます。"),
 
+        "Metti il punto rosso sul primo carattere della parola. Con ⏸ fermi l'immagine: poi tocchi le parole, o usi Seleziona per il testo verticale.":
+            ("Put the red dot on the first character of the word. ⏸ freezes the picture: then tap words, or use Select for vertical text.",
+             "赤い点を単語の最初の文字に合わせてください。⏸ で画面を止めると、単語をタップしたり、縦書きは「選択」で選べます。"),
+        "Tocca una parola. Per il testo verticale usa Seleziona.":
+            ("Tap a word. For vertical text use Select.", "単語をタップしてください。縦書きは「選択」を使ってください。"),
         // Grammar
         "negativo": ("negative", "否定"),
         "passato": ("past", "過去"),
