@@ -282,6 +282,24 @@ enum L10n {
             ("縦: put the red dot on the first character of the word, with the columns straight on screen.", "縦：赤い点を単語の最初の文字に合わせ、行を画面に対してまっすぐにしてください。"),
         "Tocca una parola, anche nel testo verticale. Seleziona usa invece Live Text.":
             ("Tap a word, vertical text too. Select uses Live Text instead.", "単語をタップしてください（縦書きも可）。「選択」は Live Text を使います。"),
+        "Punta il punto rosso su una parola: si aggancia quando è ferma. Tocca lo schermo per fermare l'immagine e scegliere col dito.":
+            ("Point the red dot at a word: it locks on when the phone is still. Touch the screen to freeze the picture and choose with your finger.",
+             "赤い点を単語に向けてください。止まると単語を捉えます。画面に触れると画像が止まり、指で選べます。"),
+        "縦: punta una parola con le colonne dritte. Per leggere la pagina intera allontanati, metti 1× e tocca lo schermo.":
+            ("縦: point at a word with the columns straight. To read the whole page, move back, set 1× and touch the screen.",
+             "縦：行をまっすぐにして単語に向けてください。ページ全体を読むには少し離れて 1× にし、画面に触れてください。"),
+        "Tocca una parola. Le colonne già lette hanno il bordo tratteggiato; Seleziona usa Live Text.":
+            ("Tap a word. Columns already read have a dashed outline; Select uses Live Text.",
+             "単語をタップしてください。読み取り済みの行は点線で囲まれます。「選択」は Live Text を使います。"),
+        "Leggo la pagina…": ("Reading the page…", "ページを読み取り中…"),
+        "Torcia": ("Torch", "ライト"),
+        "Zoom": ("Zoom", "ズーム"),
+        "Direzione del testo": ("Text direction", "文字の向き"),
+        "Automatica": ("Automatic", "自動"),
+        "横 orizzontale": ("横 horizontal", "横書き"),
+        "縦 verticale": ("縦 vertical", "縦書き"),
+        "Nessuna parola qui. Tocca un altro carattere nella riga sopra.":
+            ("No word here. Tap another character in the line above.", "ここに単語はありません。上の行の別の文字をタップしてください。"),
         // Grammar
         "negativo": ("negative", "否定"),
         "passato": ("past", "過去"),
