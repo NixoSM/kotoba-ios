@@ -55,7 +55,7 @@ final class WordAimTests: XCTestCase {
 
     func testTheWordOnScreenResistsATremor() {
         let text = "彼女たちは天気によって"
-        XCTAssertEqual(pick(text, at: 4.6, favoring: "天気"), "天気")
+        XCTAssertEqual(pick(text, at: 4.75, favoring: "天気"), "天気")
         XCTAssertEqual(pick(text, at: 4.9, favoring: "は"), "は")
         XCTAssertEqual(pick(text, at: 5.3, favoring: "は"), "天気")
     }

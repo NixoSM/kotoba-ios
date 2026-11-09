@@ -48,7 +48,7 @@ public enum WordAim {
             // How far the aim point is outside this word, in characters.
             let outside = p < Double(s) ? Double(s) - p : max(0, p - end)
             guard outside <= 1 else { continue }
-            var score = -2 * outside + 0.2 * Double(min(span, 3))
+            var score = -3 * outside + 0.15 * Double(min(span, 3))
             // Yomitan-like: of two words that both contain the point, the one starting nearer wins.
             if Double(s) <= p { score -= 0.05 * (p - Double(s)) }
             if matched == 0 { score -= 0.6 }

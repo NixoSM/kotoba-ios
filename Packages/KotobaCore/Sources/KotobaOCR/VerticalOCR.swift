@@ -36,36 +36,47 @@ public enum VerticalOCR {
     // MARK: Layout
 
     struct Column {
-        var x0: Int, x1: Int
+        /// Centre of the column on the point's row, and how far it drifts per row (a tilted page).
+        var center: Double
+        var slope: Double
+        var aimY: Int
+        /// Half the column's width.
+        var half: Double
+        /// Character pitch (the advance from one character to the next).
         var em: Double
         /// Character cells, top to bottom: (top, bottom) rows.
         var cells: [(Int, Int)]
         /// The cell under the point.
         var hit: Int
-        /// The point's row.
-        var aimY: Int
-        /// Paper brightness per row.
+        /// Paper brightness per row (the whole image height).
         var background: [Double]
+
+        /// The column's pixels on row `y`.
+        func xRange(_ y: Int, width: Int) -> (Int, Int) {
+            let c = center + Double(y - aimY) * slope
+            return (max(0, Int((c - half).rounded())), min(width, Int((c + half).rounded())))
+        }
     }
 
     /// Brightness of the paper on each row: a high percentile across a band, smoothed.
-    private static func rowBackground(_ image: GrayImage, x0: Int, x1: Int, y0: Int, y1: Int) -> [Double] {
-        let a = max(0, x0), b = min(image.width, x1)
-        guard b > a, y1 > y0 else { return [] }
-        var values = [UInt8](repeating: 0, count: b - a)
+    /// `span(y)` gives the band on row y.
+    private static func rowBackground(_ image: GrayImage, y0: Int, y1: Int, span: (Int) -> (Int, Int)) -> [Double] {
+        guard y1 > y0 else { return [] }
         var raw = [Double](repeating: 255, count: y1 - y0)
+        var values: [UInt8] = []
         for y in y0..<y1 {
-            for x in a..<b { values[x - a] = image.at(x, y) }
+            let (a, b) = span(y)
+            let lo = max(0, a), hi = min(image.width, b)
+            guard hi > lo else { continue }
+            values.removeAll(keepingCapacity: true)
+            for x in lo..<hi { values.append(image.at(x, y)) }
             values.sort()
             raw[y - y0] = Double(values[min(values.count - 1, values.count * 9 / 10)])
         }
         let k = max(3, image.height / 170)
-        var smooth = raw
-        var sum = 0.0
-        var window: [Double] = []
-        // Box filter with edge padding.
         let padded = Array(repeating: raw.first ?? 255, count: k) + raw + Array(repeating: raw.last ?? 255, count: k)
-        for i in 0..<(2 * k + 1) { sum += padded[i]; window.append(padded[i]) }
+        var smooth = raw
+        var sum = padded[0..<(2 * k + 1)].reduce(0, +)
         for i in 0..<raw.count {
             smooth[i] = max(1, sum / Double(2 * k + 1))
             if i + 2 * k + 1 < padded.count { sum += padded[i + 2 * k + 1] - padded[i] }
@@ -98,7 +109,8 @@ public enum VerticalOCR {
         // 1. Columns near the point, from the ink profile across a window.
         let r = Int(Double(min(W, H)) * 0.1), rv = Int(Double(H) * 0.2)
         let x0 = max(0, px - r), x1 = min(W, px + r), y0 = max(0, py - rv), y1 = min(H, py + rv)
-        let bg = rowBackground(image, x0: x0, x1: x1, y0: y0, y1: y1)
+        guard x1 - x0 >= 8 else { return nil }
+        let bg = rowBackground(image, y0: y0, y1: y1) { _ in (x0, x1) }
         guard !bg.isEmpty else { return nil }
         var profile = [Int](repeating: 0, count: x1 - x0)
         for y in y0..<y1 {
@@ -106,7 +118,7 @@ public enum VerticalOCR {
             for x in x0..<x1 where Double(image.at(x, y)) < limit { profile[x - x0] += 1 }
         }
         guard let peak = profile.max(), peak > 0 else { return nil }
-        let raw = runs(profile.map { Double($0) > 0.12 * Double(peak) }).map { ($0.0 + x0, $0.1 + x0) }
+        let raw = runs(profile.map { Double($0) > 0.12 * Double(peak) })
         guard !raw.isEmpty else { return nil }
         let gapMax = max(2, 0.12 * median(raw.map { Double($0.1 - $0.0) }))
         var merged: [(Int, Int)] = []
@@ -117,39 +129,64 @@ public enum VerticalOCR {
                 merged.append(run)
             }
         }
+        // A run much wider than the others is a column with its furigana: cut it at its deepest valley.
         let typical = median(merged.map { Double($0.1 - $0.0) })
-        var columns = merged.filter { Double($0.1 - $0.0) <= 2.5 * typical && $0.1 - $0.0 >= 2 }
-        if columns.isEmpty { columns = merged }
-        let widths = columns.map { Double($0.1 - $0.0) }.sorted()
+        var columns: [(Int, Int)] = []
+        for run in merged {
+            let width = run.1 - run.0
+            guard Double(width) > 1.45 * typical, width >= 8 else { columns.append(run); continue }
+            let inner = (run.0 + width / 6)..<(run.1 - width / 6)
+            let top = profile[run.0..<run.1].max() ?? 0
+            if let cut = inner.min(by: { profile[$0] < profile[$1] }), Double(profile[cut]) < 0.3 * Double(top) {
+                columns.append((run.0, cut))
+                columns.append((cut + 1, run.1))
+            } else {
+                columns.append(run)
+            }
+        }
+        columns = columns.filter { $0.1 - $0.0 >= 2 }.map { ($0.0 + x0, $0.1 + x0) }
+        guard !columns.isEmpty else { return nil }
+        let widths = columns.map { Double($0.1 - $0.0) }.filter { $0 <= 2.5 * typical }.sorted()
+        guard !widths.isEmpty else { return nil }
         var em = widths[min(widths.count - 1, widths.count * 3 / 4)] / 0.9
         guard em >= 6 else { return nil }
 
         // 2. The column under the point (furigana columns are too narrow to count).
-        var main = columns.filter { Double($0.1 - $0.0) >= 0.5 * em }
+        var main = columns.filter { Double($0.1 - $0.0) >= 0.5 * em && Double($0.1 - $0.0) <= 2.5 * typical }
         if main.isEmpty { main = columns }
         func distance(_ c: (Int, Int)) -> Int { (c.0 - 2...c.1 + 2).contains(px) ? 0 : min(abs(c.0 - px), abs(c.1 - px)) }
         guard let column = main.min(by: { distance($0) < distance($1) }), Double(distance(column)) <= em else { return nil }
         let w = Double(column.1 - column.0)
         if w < 1.3 * em { em = max(em, w / 0.95) }
-        let cx = Double(column.0 + column.1) / 2
-        let half = max(w * 0.6, em * 0.5)
-        let xa = max(0, Int(cx - half)), xb = min(W, Int(cx + half))
-        guard xb - xa >= 4 else { return nil }
 
-        // 3. Character cells down the column.
-        let ya = max(0, Int(Double(py) - 25 * em)), yb = min(H, Int(Double(py) + 25 * em))
-        let background = rowBackground(image, x0: xa - Int(em), x1: xb + Int(em), y0: ya, y1: yb)
+        // 3. Follow the column up and down: the glyphs' centres give its centre line, tilt included.
+        let (center, slope) = trackColumn(image, x: Double(column.0 + column.1) / 2, y: py, width: w, em: em)
+        let half = max(w * 0.6, em * 0.5)
+        func xRange(_ y: Int) -> (Int, Int) {
+            let c = center + Double(y - py) * slope
+            return (max(0, Int((c - half).rounded())), min(W, Int((c + half).rounded())))
+        }
+
+        // 4. Ink along the column. Its period is the character pitch, a better size than any width.
+        let reach = 25 * em
+        let ya = max(0, Int(Double(py) - reach)), yb = min(H, Int(Double(py) + reach))
+        let background = rowBackground(image, y0: ya, y1: yb) { y in
+            let (a, b) = xRange(y)
+            return (a - Int(em), b + Int(em))
+        }
         guard !background.isEmpty else { return nil }
-        var inkRows = [Bool](repeating: false, count: yb - ya)
+        var inkCount = [Int](repeating: 0, count: yb - ya)
         for y in ya..<yb {
             let limit = 0.62 * background[y - ya]
-            for x in xa..<xb where Double(image.at(x, y)) < limit {
-                inkRows[y - ya] = true
-                break
-            }
+            let (a, b) = xRange(y)
+            guard b > a else { continue }
+            for x in a..<b where Double(image.at(x, y)) < limit { inkCount[y - ya] += 1 }
         }
+        if let pitch = pitch(of: inkCount, width: w) { em = pitch }
+
+        // 5. Character cells down the column.
         var grouped: [(Int, Int)] = []
-        for seg in runs(inkRows) {
+        for seg in runs(inkCount.map { $0 > 0 }) {
             if let last = grouped.last, Double(seg.1 - last.0) <= 1.05 * em, Double(seg.0 - last.1) < 0.5 * em {
                 grouped[grouped.count - 1] = (last.0, seg.1)
             } else {
@@ -175,7 +212,93 @@ public enum VerticalOCR {
 
         var fullBackground = [Double](repeating: 255, count: H)
         for y in ya..<yb { fullBackground[y] = background[y - ya] }
-        return Column(x0: xa, x1: xb, em: em, cells: Array(cells[s...e]), hit: hit - s, aimY: py, background: fullBackground)
+        return Column(center: center, slope: slope, aimY: py, half: half, em: em,
+                      cells: Array(cells[s...e]), hit: hit - s, background: fullBackground)
+    }
+
+    /// Walks along the column a character at a time and fits a line through the
+    /// centres of the ink: pages are rarely square to the camera, and a column
+    /// tilted by 2° drifts a whole character sideways over its length.
+    private static func trackColumn(_ image: GrayImage, x: Double, y: Int, width: Double, em: Double) -> (center: Double, slope: Double) {
+        let W = image.width, H = image.height
+        let half = max(0.5 * width, 0.45 * em)
+        let step = max(4, Int(em))
+        var points: [(y: Double, x: Double)] = []
+        for direction in [1, -1] {
+            var cx = x
+            var top = direction == 1 ? y : y - step
+            for _ in 0..<28 {
+                let ya = max(0, top), yb = min(H, top + step)
+                let lo = max(0, Int(cx - half)), hi = min(W, Int(cx + half))
+                guard yb - ya >= 2, hi - lo >= 4 else { break }
+                // Paper level for this stretch, from a wider band.
+                var values: [UInt8] = []
+                let wlo = max(0, lo - step), whi = min(W, hi + step)
+                for yy in stride(from: ya, to: yb, by: 2) { for xx in stride(from: wlo, to: whi, by: 2) { values.append(image.at(xx, yy)) } }
+                values.sort()
+                let limit = 0.62 * Double(values.isEmpty ? 255 : values[min(values.count - 1, values.count * 9 / 10)])
+                var n = 0, sum = 0
+                for yy in ya..<yb { for xx in lo..<hi where Double(image.at(xx, yy)) < limit { n += 1; sum += xx } }
+                if Double(n) > 0.04 * Double((yb - ya) * (hi - lo)) {
+                    let centroid = Double(sum) / Double(n)
+                    points.append((Double(ya + yb) / 2, centroid))
+                    cx = 0.6 * cx + 0.4 * centroid
+                }
+                top += direction * step
+                if top >= H || top + step <= 0 { break }
+            }
+        }
+        guard points.count >= 3 else { return (x, 0) }
+        // Least squares, then again without the points far from the line (、。 sit off-centre).
+        var keep = Array(repeating: true, count: points.count)
+        var fit = (center: x, slope: 0.0)
+        for _ in 0..<3 {
+            let used = points.indices.filter { keep[$0] }
+            guard used.count >= 3 else { break }
+            let n = Double(used.count)
+            let my = used.reduce(0.0) { $0 + points[$1].y } / n, mx = used.reduce(0.0) { $0 + points[$1].x } / n
+            let sxy = used.reduce(0.0) { $0 + (points[$1].y - my) * (points[$1].x - mx) }
+            let syy = used.reduce(0.0) { $0 + (points[$1].y - my) * (points[$1].y - my) }
+            let slope = syy > 0 ? max(-0.14, min(0.14, sxy / syy)) : 0
+            fit = (mx + slope * (Double(y) - my), slope)
+            let residuals = points.map { abs($0.x - (fit.center + fit.slope * ($0.y - Double(y)))) }
+            let cut = max(0.18 * em, residuals.sorted()[residuals.count * 7 / 10])
+            keep = residuals.map { $0 <= cut }
+        }
+        return fit
+    }
+
+    /// The period of the ink along a column: printed characters sit on a fixed pitch.
+    private static func pitch(of ink: [Int], width: Double) -> Double? {
+        let n = ink.count
+        guard n > Int(4 * width) else { return nil }
+        let mean = Double(ink.reduce(0, +)) / Double(n)
+        let p = ink.map { Double($0) - mean }
+        let lo = max(2, Int(0.7 * width)), hi = min(n - 2, Int(1.7 * width))
+        guard hi > lo else { return nil }
+        var scores = [Double](repeating: -1, count: hi + 1)
+        var best: (lag: Int, score: Double)?
+        for lag in lo...hi {
+            var ab = 0.0, aa = 0.0, bb = 0.0
+            for i in 0..<(n - lag) { ab += p[i] * p[i + lag]; aa += p[i] * p[i]; bb += p[i + lag] * p[i + lag] }
+            let score = ab / max(1e-9, (aa * bb).squareRoot())
+            scores[lag] = score
+            if score > (best?.score ?? -1) { best = (lag, score) }
+        }
+        guard let best, best.score > 0.12 else { return nil }
+        // Twice the pitch also lines up: take the half when it is nearly as strong.
+        let halfLag = Double(best.lag) / 2
+        if halfLag >= Double(lo) {
+            let near = (Int(halfLag) - 1...Int(halfLag) + 1).filter { $0 >= lo && $0 <= hi }.map { scores[$0] }.max() ?? -1
+            if near > 0.6 * best.score { return halfLag }
+        }
+        // Sub-pixel: the peak of a parabola through the best lag and its neighbours.
+        if best.lag > lo, best.lag < hi {
+            let a = scores[best.lag - 1], b = scores[best.lag], c = scores[best.lag + 1]
+            let d = a - 2 * b + c
+            if d < 0 { return Double(best.lag) + 0.5 * (a - c) / d }
+        }
+        return Double(best.lag)
     }
 
     // MARK: Tile
@@ -196,18 +319,19 @@ public enum VerticalOCR {
         context.setFillColor(gray: 1, alpha: 1)
         context.fill(CGRect(x: 0, y: 0, width: tileW, height: tileH))
         context.interpolationQuality = .high
-        let cw = column.x1 - column.x0
 
         for (i, cell) in column.cells.enumerated() {
             let ch = cell.1 - cell.0
-            guard ch > 0 else { continue }
+            let (cx0, cx1) = column.xRange((cell.0 + cell.1) / 2, width: image.width)
+            let cw = cx1 - cx0
+            guard ch > 0, cw > 0 else { continue }
             // Normalize against the paper so shadows don't matter.
             var values = [Double](repeating: 1, count: cw * ch)
             var low = 1.0
             for y in 0..<ch {
                 let bg = column.background[cell.0 + y]
                 for x in 0..<cw {
-                    let v = min(1, Double(image.at(column.x0 + x, cell.0 + y)) / bg)
+                    let v = min(1, Double(image.at(cx0 + x, cell.0 + y)) / bg)
                     values[y * cw + x] = v
                     low = min(low, v)
                 }
@@ -231,8 +355,10 @@ public enum VerticalOCR {
 
             let ox = pad + i * step, oy = pad
             var target: CGRect
-            if Double(gw) < 0.35 * Double(em) && Double(gh) > 0.5 * Double(em) {
-                // A long vertical stroke (ー, ――, brackets): turn it to its horizontal form.
+            let turn = Double(gw) < 0.35 * Double(em) && Double(gh) > 0.5 * Double(em)  // ー, ――, …, 〜
+                || isCornerBracket(glyph, width: gw, height: gh, em: Double(em))          // ﹁﹂﹃﹄
+            if turn {
+                // Printed turned in vertical text: turn it back to its horizontal form.
                 var turned = [UInt8](repeating: 255, count: gw * gh)
                 for y in 0..<gh { for x in 0..<gw { turned[(gw - 1 - x) * gh + y] = glyph[y * gw + x] } }
                 glyph = turned
@@ -261,6 +387,34 @@ public enum VerticalOCR {
         }
         guard let tile = context.makeImage() else { return nil }
         return Tile(image: tile, pad: pad, step: step)
+    }
+
+    /// A corner bracket in its vertical form: thin strokes along two adjacent sides
+    /// of its box (top and right: ﹁ opening; bottom and left: ﹂ closing), the
+    /// other two sides empty. The recognizer reads them as the wrong bracket.
+    static func isCornerBracket(_ glyph: [UInt8], width gw: Int, height gh: Int, em: Double) -> Bool {
+        guard Double(max(gw, gh)) <= 1.0 * em, Double(min(gw, gh)) <= 0.55 * em,
+              Double(min(gw, gh)) >= 0.15 * em, gw >= 4, gh >= 4 else { return false }
+        var ink = 0
+        for v in glyph where v < 140 { ink += 1 }
+        guard Double(ink) < 0.4 * Double(gw * gh) else { return false }
+        let bx = max(1, gw / 6), by = max(1, gh / 6)
+        func covered(_ xs: Range<Int>, _ ys: Range<Int>, along horizontal: Bool) -> Double {
+            // Share of the side's length that has ink within the band.
+            let length = horizontal ? xs.count : ys.count
+            var hits = 0
+            if horizontal {
+                for x in xs where ys.contains(where: { glyph[$0 * gw + x] < 140 }) { hits += 1 }
+            } else {
+                for y in ys where xs.contains(where: { glyph[y * gw + $0] < 140 }) { hits += 1 }
+            }
+            return Double(hits) / Double(max(1, length))
+        }
+        let top = covered(0..<gw, 0..<by, along: true), bottom = covered(0..<gw, (gh - by)..<gh, along: true)
+        let left = covered(0..<bx, 0..<gh, along: false), right = covered((gw - bx)..<gw, 0..<gh, along: false)
+        let full = 0.75, empty = 0.45
+        return (top >= full && right >= full && bottom < empty && left < empty)
+            || (bottom >= full && left >= full && top < empty && right < empty)
     }
 
     // MARK: Recognition
@@ -295,9 +449,10 @@ public enum VerticalOCR {
         var fraction = 0.0
         for item in found {
             let cell = column.cells[item.cell]
+            let (x0, x1) = column.xRange((cell.0 + cell.1) / 2, width: image.width)
             line.text.append(item.char)
-            line.boxes.append(CGRect(x: Double(column.x0) / W, y: 1 - Double(cell.1) / H,
-                                     width: Double(column.x1 - column.x0) / W, height: Double(cell.1 - cell.0) / H))
+            line.boxes.append(CGRect(x: Double(x0) / W, y: 1 - Double(cell.1) / H,
+                                     width: Double(x1 - x0) / W, height: Double(cell.1 - cell.0) / H))
             if hit == nil, item.cell >= column.hit {
                 hit = line.text.count - 1
                 if item.cell == column.hit {
@@ -306,10 +461,7 @@ public enum VerticalOCR {
             }
         }
         if hit == nil { fraction = 0.999 }
-        let top = column.cells.first?.0 ?? 0, bottom = column.cells.last?.1 ?? 0
-        let frame = CGRect(x: Double(column.x0) / W, y: 1 - Double(bottom) / H,
-                           width: Double(column.x1 - column.x0) / W, height: Double(bottom - top) / H)
-        return Result(line: line, hit: hit ?? line.text.count - 1, fraction: fraction, em: column.em, frame: frame)
+        return Result(line: line, hit: hit ?? line.text.count - 1, fraction: fraction, em: column.em, frame: line.frame)
     }
 
     /// Vertical-only shapes the recognizer may return as something else.
