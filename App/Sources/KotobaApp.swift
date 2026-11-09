@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct KotobaApp: App {
     @State private var model = AppModel()
+    @State private var hooker = HookerModel()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -18,6 +19,13 @@ struct KotobaApp: App {
                 })
                     .tabItem { Label(tr("Fotocamera"), systemImage: "text.viewfinder") }
                     .tag(1)
+                TexthookerView(onSearch: { text in
+                    model.pendingQuery = text
+                    model.selectedTab = 0
+                })
+                    .tabItem { Label(tr("Dal PC"), systemImage: "desktopcomputer") }
+                    .badge(hooker.unread)
+                    .tag(4)
                 DictionariesView()
                     .tabItem { Label(tr("Dizionari"), systemImage: "books.vertical") }
                     .tag(2)
@@ -26,6 +34,7 @@ struct KotobaApp: App {
                     .tag(3)
             }
             .environment(model)
+            .environment(hooker)
             .tint(Palette.shu)
             .preferredColorScheme(ThemePalette.colorScheme(for: model.settings.appearance.theme))
             // Rebuild the screens so every colour and word follows a new theme or language.
@@ -35,9 +44,18 @@ struct KotobaApp: App {
             }
             .onAppear {
                 QuickAction.handler = { [model] action in model.perform(action) }
+                hooker.readings = { [store = model.store] kanji in
+                    (store?.entryHeaders(matching: kanji) ?? []).map(\.reading).filter { !$0.isEmpty }
+                }
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { model.becameActive() }
+                // iOS stops the network in the background: let go, and reconnect on return.
+                if phase == .active { hooker.setActive(true) }
+                if phase == .background {
+                    hooker.setActive(false)
+                    hooker.saveNow()
+                }
             }
             .overlay(alignment: .bottom) {
                 if let toast = model.toast {
