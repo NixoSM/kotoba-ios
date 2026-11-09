@@ -38,8 +38,8 @@ struct ResultsPane: View {
             Task {
                 switch await WordAudio.shared.play(expression: e, reading: r) {
                 case .played: break
-                case .notFound: model.toast = "Nessuna registrazione per \(e)"
-                case .failed: model.toast = "Audio non disponibile (sei online?)"
+                case .notFound: model.toast = tr("Nessuna registrazione per {0}", e)
+                case .failed: model.toast = tr("Audio non disponibile (sei online?)")
                 }
             }
         case "mine":

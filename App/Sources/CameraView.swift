@@ -28,20 +28,20 @@ struct CameraView: View {
                     .ignoresSafeArea(edges: .bottom)
                 } else {
                     ContentUnavailableView {
-                        Label("Leggi dal mondo reale", systemImage: "text.viewfinder")
+                        Label(tr("Leggi dal mondo reale"), systemImage: "text.viewfinder")
                     } description: {
-                        Text("Scatta una foto o scegline una. Poi tieni premuto sul testo giapponese, anche verticale, e trascina per selezionare la parola: la definizione appare qui sotto.")
+                        Text(tr("Scatta una foto o scegline una. Poi tieni premuto sul testo giapponese, anche verticale, e trascina per selezionare la parola: la definizione appare qui sotto."))
                     } actions: {
                         HStack {
-                            Button("Scatta foto") { takingPhoto = true }
+                            Button(tr("Scatta foto")) { takingPhoto = true }
                                 .buttonStyle(.borderedProminent)
-                            PhotosPicker("Dalla libreria", selection: $pickerItem, matching: .images)
+                            PhotosPicker(tr("Dalla libreria"), selection: $pickerItem, matching: .images)
                                 .buttonStyle(.bordered)
                         }
                     }
                 }
             }
-            .navigationTitle("Fotocamera")
+            .navigationTitle(tr("Fotocamera"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if image != nil {

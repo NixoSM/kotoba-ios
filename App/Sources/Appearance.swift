@@ -4,17 +4,10 @@ import KotobaCore
 /// How results look: the same knobs as Yomitan's "Appearance" settings,
 /// plus a font picker that also accepts your own font files.
 struct Appearance: Codable, Equatable {
-    enum Theme: String, Codable, CaseIterable, Identifiable {
-        case system, light, dark
-        var id: Self { self }
-        var label: String { switch self { case .system: "Automatico"; case .light: "Carta"; case .dark: "Inchiostro" } }
-        var colorScheme: ColorScheme? { switch self { case .system: nil; case .light: .light; case .dark: .dark } }
-    }
-
     enum Layout: String, Codable, CaseIterable, Identifiable {
         case comfortable, compact
         var id: Self { self }
-        var label: String { self == .comfortable ? "Arioso" : "Compatto" }
+        var label: String { self == .comfortable ? tr("Arioso") : tr("Compatto") }
     }
 
     enum TermDisplay: String, Codable, CaseIterable, Identifiable {
@@ -22,10 +15,10 @@ struct Appearance: Codable, Equatable {
         var id: Self { self }
         var label: String {
             switch self {
-            case .ruby: "Furigana sopra"
-            case .rubyAndReading: "Furigana e lettura"
-            case .termAndReading: "Parola【lettura】"
-            case .termOnly: "Solo la parola"
+            case .ruby: tr("Furigana sopra")
+            case .rubyAndReading: tr("Furigana e lettura")
+            case .termAndReading: tr("Parola【lettura】")
+            case .termOnly: tr("Solo la parola")
             }
         }
     }
@@ -33,10 +26,11 @@ struct Appearance: Codable, Equatable {
     enum FrequencyDisplay: String, Codable, CaseIterable, Identifiable {
         case average, split, hidden
         var id: Self { self }
-        var label: String { switch self { case .average: "Media"; case .split: "Ogni elenco"; case .hidden: "Nascosta" } }
+        var label: String { switch self { case .average: tr("Media"); case .split: tr("Ogni elenco"); case .hidden: tr("Nascosta") } }
     }
 
-    var theme = Theme.system
+    /// A ThemePalette id, or "auto" (Washi by day, Sumi by night).
+    var theme = "auto"
     var bodyFont = "hiragino-sans"
     var headwordFont = "shippori-mincho"
     var fontSize = 17.0
@@ -101,8 +95,8 @@ struct Appearance: Codable, Equatable {
         if let v = y.pitchPositionNotation { pitchNumber = v }
         if let v = y.pitchGraph { pitchGraph = v }
         switch y.theme {
-        case "light": theme = .light
-        case "dark": theme = .dark
+        case "light": theme = "washi"
+        case "dark": theme = "sumi"
         default: break
         }
         if let css = y.customCSS, !css.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { customCSS = css }
@@ -128,8 +122,9 @@ struct FontChoice: Identifiable, Hashable {
 }
 
 enum FontCatalog {
-    static let builtIn: [FontChoice] = [
-        FontChoice(id: "system", name: "Sistema", css: "-apple-system, 'Hiragino Sans'"),
+    // Computed so that "Sistema" follows the app language.
+    static var builtIn: [FontChoice] { [
+        FontChoice(id: "system", name: tr("Sistema"), css: "-apple-system, 'Hiragino Sans'"),
         FontChoice(id: "hiragino-sans", name: "Hiragino Sans", css: "'Hiragino Sans'", postScriptName: "HiraginoSans-W3"),
         FontChoice(id: "hiragino-mincho", name: "Hiragino Mincho", css: "'Hiragino Mincho ProN'", postScriptName: "HiraMinProN-W3"),
         FontChoice(id: "hiragino-maru", name: "Hiragino Maru Gothic", css: "'Hiragino Maru Gothic ProN'", postScriptName: "HiraMaruProN-W4"),
@@ -145,7 +140,7 @@ enum FontCatalog {
         FontChoice(id: "zen-maru", name: "Zen Maru Gothic", css: "'Kotoba Zen Maru Gothic'",
                    faces: [.init(file: "ZenMaruGothic-Medium.ttf", weight: 400)],
                    postScriptName: "ZenMaruGothic-Medium"),
-    ]
+    ] }
 
     /// Fonts you added (.ttf/.otf), kept in the app's own folder.
     static var folder: URL {
@@ -214,20 +209,98 @@ enum FontCatalog {
     }
 }
 
-// MARK: Palette
+// MARK: Themes
 
-/// Sumi ink on washi paper, with one shu (vermilion) accent, like the red
-/// marks in a printed dictionary.
+/// A complete colour set for the app and the results page.
+struct ThemePalette: Identifiable, Hashable {
+    let id: String
+    let name: String
+    /// The character on the theme's swatch.
+    let mark: String
+    let dark: Bool
+    let paper: UInt32
+    let raised: UInt32
+    let ink: UInt32
+    let muted: UInt32
+    let rule: UInt32
+    let accent: UInt32
+
+    static let all: [ThemePalette] = [
+        // Paper and sumi ink, vermilion seal: the printed dictionary.
+        ThemePalette(id: "washi", name: "Washi", mark: "紙", dark: false,
+                     paper: 0xF4EEE3, raised: 0xFBF8F2, ink: 0x1D1A16, muted: 0x8A8276, rule: 0xE2D8C6, accent: 0xC23C24),
+        ThemePalette(id: "sumi", name: "Sumi", mark: "墨", dark: true,
+                     paper: 0x13110E, raised: 0x1D1A16, ink: 0xECE4D4, muted: 0x8F877B, rule: 0x2C2823, accent: 0xE2603F),
+        // Indigo-dyed cloth with gold thread.
+        ThemePalette(id: "ai", name: "Aizome", mark: "藍", dark: true,
+                     paper: 0x0E1626, raised: 0x152036, ink: 0xE4E8F1, muted: 0x8290AB, rule: 0x233150, accent: 0xE3B25A),
+        // Petals on white, plum-coloured ink.
+        ThemePalette(id: "sakura", name: "Sakura", mark: "桜", dark: false,
+                     paper: 0xFBF2F3, raised: 0xFFF9FA, ink: 0x34262B, muted: 0x9A7F87, rule: 0xEFD8DD, accent: 0xC94F78),
+        // Tea-ceremony green, quiet and low contrast.
+        ThemePalette(id: "matcha", name: "Matcha", mark: "茶", dark: false,
+                     paper: 0xEDEFE2, raised: 0xF6F7EE, ink: 0x1F2619, muted: 0x7B836C, rule: 0xD6DBC4, accent: 0x4F7A28),
+        // Old-book sepia, gentle for long reading.
+        ThemePalette(id: "kohaku", name: "Kohaku", mark: "琥", dark: false,
+                     paper: 0xF1E4C8, raised: 0xF7EDD6, ink: 0x3A2C1A, muted: 0x8C7556, rule: 0xDCC9A3, accent: 0x9A4A1F),
+        // Shinjuku at 2 a.m.: violet night, neon pink.
+        ThemePalette(id: "yoru", name: "Yoru", mark: "夜", dark: true,
+                     paper: 0x0D0C16, raised: 0x171527, ink: 0xE8E6F7, muted: 0x7D7A99, rule: 0x25223B, accent: 0xFF5C8A),
+        // Fresh snow, cold blue: crisp and modern.
+        ThemePalette(id: "yuki", name: "Yuki", mark: "雪", dark: false,
+                     paper: 0xF7F8FA, raised: 0xFFFFFF, ink: 0x15181D, muted: 0x7C8490, rule: 0xE3E6EB, accent: 0x2563C9),
+    ]
+
+    /// Shown under the swatch: romanised, or in kanji for Japanese.
+    var label: String {
+        guard L10n.current == .ja else { return name }
+        return ["washi": "和紙", "sumi": "墨", "ai": "藍染", "sakura": "桜", "matcha": "抹茶",
+                "kohaku": "琥珀", "yoru": "夜", "yuki": "雪"][id] ?? name
+    }
+
+    static func named(_ id: String) -> ThemePalette { all.first { $0.id == id } ?? all[0] }
+
+    /// Light and dark palettes for a setting ("auto" follows the system).
+    static func pair(for setting: String) -> (light: ThemePalette, dark: ThemePalette) {
+        setting == "auto" ? (named("washi"), named("sumi")) : (named(setting), named(setting))
+    }
+
+    static func colorScheme(for setting: String) -> ColorScheme? {
+        setting == "auto" ? nil : (named(setting).dark ? .dark : .light)
+    }
+
+    /// CSS custom properties for the results page.
+    var cssVariables: String {
+        func hex(_ v: UInt32) -> String { "#" + String(format: "%06X", v) }
+        return "--paper:\(hex(paper));--raised:\(hex(raised));--ink:\(hex(ink));--muted:\(hex(muted));--rule:\(hex(rule));--shu:\(hex(accent));"
+            + "--chip:color-mix(in srgb, \(hex(ink)) 7%, transparent);"
+    }
+
+    static func css(for setting: String) -> String {
+        let p = pair(for: setting)
+        if setting == "auto" {
+            return ":root{color-scheme:light dark;\(p.light.cssVariables)}@media (prefers-color-scheme: dark){:root{\(p.dark.cssVariables)}}"
+        }
+        return ":root{color-scheme:\(p.light.dark ? "dark" : "light");\(p.light.cssVariables)}"
+    }
+}
+
+/// The app's colours, following the chosen theme.
 enum Palette {
-    static let paper = dynamic(light: 0xF4EEE3, dark: 0x13110E)
-    static let raised = dynamic(light: 0xFBF8F2, dark: 0x1D1A16)
-    static let ink = dynamic(light: 0x1D1A16, dark: 0xECE4D4)
-    static let muted = dynamic(light: 0x8A8276, dark: 0x8F877B)
-    static let rule = dynamic(light: 0xE2D8C6, dark: 0x2C2823)
-    static let shu = dynamic(light: 0xC23C24, dark: 0xE2603F)
+    nonisolated(unsafe) private static var current = ThemePalette.pair(for: "auto")
 
-    private static func dynamic(light: UInt32, dark: UInt32) -> Color {
-        Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: dark) : UIColor(hex: light) })
+    static func apply(_ setting: String) { current = ThemePalette.pair(for: setting) }
+
+    static var paper: Color { color(\.paper) }
+    static var raised: Color { color(\.raised) }
+    static var ink: Color { color(\.ink) }
+    static var muted: Color { color(\.muted) }
+    static var rule: Color { color(\.rule) }
+    static var shu: Color { color(\.accent) }
+
+    private static func color(_ key: KeyPath<ThemePalette, UInt32>) -> Color {
+        let pair = current
+        return Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: pair.dark[keyPath: key]) : UIColor(hex: pair.light[keyPath: key]) })
     }
 }
 

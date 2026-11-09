@@ -16,55 +16,55 @@ struct AppearanceView: View {
                 .frame(height: 300)
                 .overlay(alignment: .bottom) { Rectangle().fill(Palette.rule).frame(height: 1) }
             Form {
-                Section("Tema") {
-                    Picker("Tema", selection: a.theme) {
-                        ForEach(Appearance.Theme.allCases) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .listRowBackground(Color.clear)
+                Section {
+                    ThemePicker(selection: a.theme)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                } header: {
+                    Text(tr("Tema"))
                 }
 
                 Section {
-                    fontPicker("Testo", selection: a.bodyFont)
-                    fontPicker("Lemma", selection: a.headwordFont)
-                    LabeledContent("Dimensione") {
+                    fontPicker(tr("Testo"), selection: a.bodyFont)
+                    fontPicker(tr("Lemma"), selection: a.headwordFont)
+                    LabeledContent(tr("Dimensione")) {
                         Stepper("\(Int(a.wrappedValue.fontSize)) pt", value: a.fontSize, in: 12...28, step: 1)
                             .fixedSize()
                     }
                     VStack(alignment: .leading) {
-                        LabeledContent("Interlinea", value: a.wrappedValue.lineHeight.formatted(.number.precision(.fractionLength(2))))
+                        LabeledContent(tr("Interlinea"), value: a.wrappedValue.lineHeight.formatted(.number.precision(.fractionLength(2))))
                         Slider(value: a.lineHeight, in: 1.0...2.2, step: 0.05)
                     }
-                    Button("Aggiungi un font (.ttf, .otf)…", systemImage: "textformat") { addingFont = true }
+                    Button(tr("Aggiungi un font (.ttf, .otf)…"), systemImage: "textformat") { addingFont = true }
                 } header: {
-                    Text("Caratteri")
+                    Text(tr("Caratteri"))
                 } footer: {
-                    Text("Klee One, Shippori Mincho e Zen Maru Gothic sono inclusi nell'app. Puoi aggiungere qualsiasi font giapponese che hai in File.")
+                    Text(tr("Klee One, Shippori Mincho e Zen Maru Gothic sono inclusi nell'app. Puoi aggiungere qualsiasi font giapponese che hai in File."))
                 }
 
-                Section("Disposizione") {
-                    Picker("Layout", selection: a.layout) {
+                Section(tr("Disposizione")) {
+                    Picker(tr("Layout"), selection: a.layout) {
                         ForEach(Appearance.Layout.allCases) { Text($0.label).tag($0) }
                     }
-                    Picker("Lemma", selection: a.termDisplay) {
+                    Picker(tr("Lemma"), selection: a.termDisplay) {
                         ForEach(Appearance.TermDisplay.allCases) { Text($0.label).tag($0) }
                     }
-                    Toggle("Nomi dei dizionari", isOn: a.showDictionaryNames)
-                    Toggle("Categorie grammaticali", isOn: a.showTags)
+                    Toggle(tr("Nomi dei dizionari"), isOn: a.showDictionaryNames)
+                    Toggle(tr("Categorie grammaticali"), isOn: a.showTags)
                 }
 
-                Section("Frequenza") {
-                    Picker("Mostra", selection: a.frequency) {
+                Section(tr("Frequenza")) {
+                    Picker(tr("Mostra"), selection: a.frequency) {
                         ForEach(Appearance.FrequencyDisplay.allCases) { Text($0.label).tag($0) }
                     }
                 }
 
                 Section {
-                    Toggle("Linea sopra la lettura", isOn: a.pitchNotation)
-                    Toggle("Grafico a punti", isOn: a.pitchGraph)
-                    Toggle("Numero [n]", isOn: a.pitchNumber)
+                    Toggle(tr("Linea sopra la lettura"), isOn: a.pitchNotation)
+                    Toggle(tr("Grafico a punti"), isOn: a.pitchGraph)
+                    Toggle(tr("Numero [n]"), isOn: a.pitchNumber)
                 } header: {
-                    Text("Accento")
+                    Text(tr("Accento"))
                 }
 
                 Section {
@@ -74,13 +74,13 @@ struct AppearanceView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 } header: {
-                    Text("CSS personalizzato")
+                    Text(tr("CSS personalizzato"))
                 } footer: {
-                    Text("Come il «Custom CSS» di Yomitan. Esempio: .headword { color: var(--shu); }")
+                    Text(tr("Come il «Custom CSS» di Yomitan. Esempio: .headword { color: var(--shu); }"))
                 }
 
                 Section {
-                    Button("Ripristina l'aspetto predefinito", role: .destructive) {
+                    Button(tr("Ripristina l'aspetto predefinito"), role: .destructive) {
                         model.settings.appearance = Appearance()
                     }
                 }
@@ -88,7 +88,7 @@ struct AppearanceView: View {
             .scrollContentBackground(.hidden)
         }
         .background(Palette.paper)
-        .navigationTitle("Aspetto")
+        .navigationTitle(tr("Aspetto"))
         .navigationBarTitleDisplayMode(.inline)
         .fileImporter(isPresented: $addingFont, allowedContentTypes: [.font, UTType(filenameExtension: "ttf") ?? .font, UTType(filenameExtension: "otf") ?? .font]) { result in
             guard case .success(let url) = result else { return }
@@ -97,7 +97,7 @@ struct AppearanceView: View {
                 fonts = FontCatalog.all()
                 model.settings.appearance.bodyFont = id
             } catch {
-                model.errorMessage = "Non riesco a copiare il font: \(error.localizedDescription)"
+                model.errorMessage = tr("Non riesco a copiare il font: {0}", error.localizedDescription)
             }
         }
     }
@@ -126,5 +126,51 @@ struct AppearanceView: View {
         g.pitches = [PitchInfo(dictionary: "アクセント辞典", reading: "ことば", positions: [3])]
         let options = ResultsPage.Options(stylesheets: [:], canMine: true, appearance: model.settings.appearance)
         return ResultsPage.page(body: ResultsPage.entry(g, link: "kotoba://none", options: options), options: options)
+    }
+}
+
+/// Swatches you can scroll through: each shows the theme's paper, ink and accent.
+private struct ThemePicker: View {
+    @Binding var selection: String
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                swatch(id: "auto", name: tr("Auto"), mark: "自", light: .named("washi"), dark: .named("sumi"))
+                ForEach(ThemePalette.all) { theme in
+                    swatch(id: theme.id, name: theme.label, mark: theme.mark, light: theme, dark: theme)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+        }
+    }
+
+    private func swatch(id: String, name: String, mark: String, light: ThemePalette, dark: ThemePalette) -> some View {
+        let selected = selection == id
+        return Button { selection = id } label: {
+            VStack(spacing: 6) {
+                ZStack(alignment: .topTrailing) {
+                    HStack(spacing: 0) {
+                        tile(light, mark: mark)
+                        if light != dark { tile(dark, mark: mark) }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    Rectangle().fill(Color(UIColor(hex: light.accent))).frame(width: 7, height: 24).padding(.trailing, 12)
+                }
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(selected ? Palette.shu : Palette.rule, lineWidth: selected ? 2.5 : 1))
+                Text(name).font(.caption.weight(selected ? .semibold : .regular)).foregroundStyle(selected ? Palette.shu : Palette.muted)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func tile(_ p: ThemePalette, mark: String) -> some View {
+        Text(mark)
+            .font(.mincho(30, bold: true))
+            .foregroundStyle(Color(UIColor(hex: p.ink)))
+            .frame(width: 41, height: 78)
+            .frame(maxWidth: .infinity)
+            .background(Color(UIColor(hex: p.paper)))
     }
 }

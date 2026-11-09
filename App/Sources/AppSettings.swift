@@ -12,6 +12,8 @@ struct AppSettings: Codable, Equatable {
     var appearance = Appearance()
     /// Recent searches, newest first.
     var history: [String] = []
+    /// Language of the app's own words.
+    var language = AppLanguage.system
 
     init() {}
 
@@ -25,6 +27,7 @@ struct AppSettings: Codable, Equatable {
         collapsedDictionaries = try c.decodeIfPresent(Set<String>.self, forKey: .collapsedDictionaries) ?? []
         appearance = (try? c.decodeIfPresent(Appearance.self, forKey: .appearance)) ?? Appearance()
         history = (try? c.decodeIfPresent([String].self, forKey: .history)) ?? []
+        language = (try? c.decodeIfPresent(AppLanguage.self, forKey: .language)) ?? .system
     }
 
     private static let key = "settings.v1"

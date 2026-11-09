@@ -20,7 +20,7 @@ struct SettingsView: View {
                                 .frame(width: 40, height: 40)
                                 .background(Palette.shu.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Aspetto")
+                                Text(tr("Aspetto"))
                                 Text("\(FontCatalog.choice(model.settings.appearance.bodyFont).name) · \(Int(model.settings.appearance.fontSize)) pt · \(model.settings.appearance.layout.label)")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
@@ -29,18 +29,30 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Picker(selection: $model.settings.language) {
+                        ForEach(AppLanguage.allCases) { Text($0.label).tag($0) }
+                    } label: {
+                        Label(tr("Lingua dell'app"), systemImage: "globe")
+                    }
+                } header: {
+                    Text(tr("Lingua"))
+                } footer: {
+                    Text(tr("Menu e pulsanti di sistema (Annulla, Modifica, la scelta dei file) cambiano lingua alla prossima apertura dell'app."))
+                }
+
+                Section {
                     Button {
                         pickingBackup = true
                     } label: {
-                        Label("Importa impostazioni di Yomitan", systemImage: "square.and.arrow.down")
+                        Label(tr("Importa impostazioni di Yomitan"), systemImage: "square.and.arrow.down")
                     }
                 } footer: {
-                    Text("Il file yomitan-settings-….json: applica ordine e attivazione dei dizionari, il dizionario di frequenza, l'aspetto (font, dimensioni, layout) e la nota Anki.")
+                    Text(tr("Il file yomitan-settings-….json: applica ordine e attivazione dei dizionari, il dizionario di frequenza, l'aspetto (font, dimensioni, layout) e la nota Anki."))
                 }
 
-                Section("Ordinamento dei risultati") {
-                    Picker("Dizionario di frequenza", selection: $model.settings.sortFrequencyDictionary) {
-                        Text("Il primo disponibile").tag(String?.none)
+                Section(tr("Ordinamento dei risultati")) {
+                    Picker(tr("Dizionario di frequenza"), selection: $model.settings.sortFrequencyDictionary) {
+                        Text(tr("Il primo disponibile")).tag(String?.none)
                         ForEach(frequencyDictionaries, id: \.self) { Text($0).tag(String?.some($0)) }
                     }
                 }
@@ -50,23 +62,23 @@ struct SettingsView: View {
                         get: { model.settings.ankiFormat ?? .example },
                         set: { model.settings.ankiFormat = $0 }))
                     Section {
-                        Button("Dimentica le parole già minate", role: .destructive) { model.settings.mined = [] }
+                        Button(tr("Dimentica le parole già minate"), role: .destructive) { model.settings.mined = [] }
                     } footer: {
-                        Text("AnkiMobile non permette di controllare i duplicati: Kotoba ricorda da solo le \(model.settings.mined.count) parole che hai già inviato.")
+                        Text(tr("AnkiMobile non permette di controllare i duplicati: Kotoba ricorda da solo le {0} parole che hai già inviato.", model.settings.mined.count))
                     }
                 } else {
                     Section {
-                        Button("Configura una nota Anki a mano") { model.settings.ankiFormat = .example }
+                        Button(tr("Configura una nota Anki a mano")) { model.settings.ankiFormat = .example }
                     } header: {
                         Text("Anki")
                     } footer: {
-                        Text("Oppure importa le impostazioni di Yomitan qui sopra: la tua nota viene configurata da sola.")
+                        Text(tr("Oppure importa le impostazioni di Yomitan qui sopra: la tua nota viene configurata da sola."))
                     }
                 }
             }
             .scrollContentBackground(.hidden)
             .background(Palette.paper)
-            .navigationTitle("Impostazioni")
+            .navigationTitle(tr("Impostazioni"))
             .fileImporter(isPresented: $pickingBackup, allowedContentTypes: [.json]) { result in
                 if case .success(let url) = result { model.importYomitanSettings(from: url) }
                 frequencyDictionaries = model.store?.frequencyDictionaries() ?? []
@@ -81,37 +93,37 @@ private struct AnkiFormatSection: View {
 
     var body: some View {
         Section {
-            LabeledContent("Mazzo") { TextField("Mazzo", text: $format.deck).multilineTextAlignment(.trailing) }
-            LabeledContent("Tipo di nota") { TextField("Tipo di nota", text: $format.model).multilineTextAlignment(.trailing) }
-            LabeledContent("Etichette") {
-                TextField("Etichette", text: Binding(
+            LabeledContent(tr("Mazzo")) { TextField(tr("Mazzo"), text: $format.deck).multilineTextAlignment(.trailing) }
+            LabeledContent(tr("Tipo di nota")) { TextField(tr("Tipo di nota"), text: $format.model).multilineTextAlignment(.trailing) }
+            LabeledContent(tr("Etichette")) {
+                TextField(tr("Etichette"), text: Binding(
                     get: { format.tags.joined(separator: " ") },
                     set: { format.tags = $0.split(separator: " ").map(String.init) }))
                 .multilineTextAlignment(.trailing)
             }
         } header: {
-            Text("Nota Anki (AnkiMobile)")
+            Text(tr("Nota Anki (AnkiMobile)"))
         } footer: {
-            Text("I nomi devono essere identici a quelli in AnkiMobile, maiuscole comprese.")
+            Text(tr("I nomi devono essere identici a quelli in AnkiMobile, maiuscole comprese."))
         }
 
         Section {
             ForEach($format.fields, id: \.name) { $field in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(field.name).font(.subheadline.weight(.semibold))
-                    TextField("vuoto", text: $field.template)
+                    TextField(tr("vuoto"), text: $field.template)
                         .font(.footnote.monospaced())
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
             }
         } header: {
-            Text("Campi")
+            Text(tr("Campi"))
         } footer: {
             let unsupported = AnkiFieldRenderer.unsupportedMarkers(in: format)
             Text(unsupported.isEmpty
-                 ? "Segnaposto disponibili: {expression} {reading} {furigana} {furigana-plain} {glossary} {glossary-first} {sentence} {cloze-prefix} {cloze-body} {cloze-suffix} {pitch-accents} {frequencies} {frequency-harmonic-rank} {part-of-speech}."
-                 : "Per ora restano vuoti: " + unsupported.map { "{\($0)}" }.joined(separator: " ") + ". Audio e immagini non passano tramite il collegamento di AnkiMobile.")
+                 ? tr("Segnaposto disponibili:") + " {expression} {reading} {furigana} {furigana-plain} {glossary} {glossary-first} {sentence} {cloze-prefix} {cloze-body} {cloze-suffix} {pitch-accents} {frequencies} {frequency-harmonic-rank} {part-of-speech}."
+                 : tr("Per ora restano vuoti:") + " " + unsupported.map { "{\($0)}" }.joined(separator: " ") + ". " + tr("Audio e immagini non passano tramite il collegamento di AnkiMobile."))
         }
     }
 }

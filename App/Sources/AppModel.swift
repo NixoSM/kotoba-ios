@@ -13,7 +13,11 @@ final class AppModel {
     /// Short confirmation shown at the bottom of the screen.
     var toast: String?
     var settings = AppSettings.load() {
-        didSet { settings.save() }
+        didSet {
+            settings.save()
+            if settings.appearance.theme != oldValue.appearance.theme { Palette.apply(settings.appearance.theme) }
+            if settings.language != oldValue.language { L10n.apply(settings.language) }
+        }
     }
     /// Set from outside (kotoba://search?q=…, camera) to run a search.
     var pendingQuery: String?
@@ -33,9 +37,11 @@ final class AppModel {
             store = try DictionaryStore(path: folder.appendingPathComponent("dictionaries.sqlite").path)
         } catch {
             store = nil
-            errorMessage = "Impossibile aprire il database: \(error)"
+            errorMessage = tr("Impossibile aprire il database: {0}", error)
         }
         MediaSchemeHandler.store = store
+        Palette.apply(settings.appearance.theme)
+        L10n.apply(settings.language)
         refresh()
         buildMissingReverseIndexes()
     }
@@ -72,11 +78,11 @@ final class AppModel {
     /// Opens AnkiMobile's "Add" screen filled with this word.
     func mine(_ group: HeadwordGroup, sentence: String) {
         guard let format = settings.ankiFormat else {
-            errorMessage = "Prima configura la nota Anki in Impostazioni (puoi importarla dal backup di Yomitan)."
+            errorMessage = tr("Prima configura la nota Anki in Impostazioni (puoi importarla dal backup di Yomitan).")
             return
         }
         guard let url = AnkiMobileLink.url(format: format, context: group.miningContext(sentence: sentence)) else {
-            errorMessage = "Non riesco a creare il collegamento per AnkiMobile."
+            errorMessage = tr("Non riesco a creare il collegamento per AnkiMobile.")
             return
         }
         UIApplication.shared.open(url) { [weak self] opened in
@@ -84,7 +90,7 @@ final class AppModel {
             if opened {
                 self.settings.mined.insert(group.minedKey)
             } else {
-                self.errorMessage = "AnkiMobile non risulta installato."
+                self.errorMessage = tr("AnkiMobile non risulta installato.")
             }
         }
     }
@@ -93,7 +99,7 @@ final class AppModel {
         guard url.scheme == "kotoba" else { return }
         switch url.host {
         case "mined":
-            toast = "Aggiunta ad Anki"
+            toast = tr("Aggiunta ad Anki")
         case "search":
             pendingQuery = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "q" }?.value
         default:
@@ -112,29 +118,29 @@ final class AppModel {
             var report: [String] = []
             if let store {
                 let result = try store.apply(parsed.dictionaries)
-                report.append("Ordine e attivazione applicati a \(result.applied) dizionari.")
+                report.append(tr("Ordine e attivazione applicati a {0} dizionari.", result.applied))
                 if !result.notInstalled.isEmpty {
-                    report.append("Non ancora importati: \(result.notInstalled.joined(separator: ", ")).")
+                    report.append(tr("Non ancora importati: {0}.", result.notInstalled.joined(separator: ", ")))
                 }
             }
             if let sort = parsed.sortFrequencyDictionary {
                 settings.sortFrequencyDictionary = sort
-                report.append("Ordinamento per frequenza: \(sort).")
+                report.append(tr("Ordinamento per frequenza: {0}.", sort))
             }
             settings.appearance.apply(parsed.appearance)
-            report.append("Aspetto: carattere \(FontCatalog.choice(settings.appearance.bodyFont).name), \(Int(settings.appearance.fontSize)) pt, layout \(settings.appearance.layout.label.lowercased()).")
+            report.append(tr("Aspetto: carattere {0}, {1} pt, layout {2}.", FontCatalog.choice(settings.appearance.bodyFont).name, Int(settings.appearance.fontSize), settings.appearance.layout.label.lowercased()))
             if let format = parsed.ankiTermFormat {
                 settings.ankiFormat = format
-                report.append("Nota Anki: \(format.model) → \(format.deck).")
+                report.append(tr("Nota Anki: {0} → {1}.", format.model, format.deck))
                 let unsupported = AnkiFieldRenderer.unsupportedMarkers(in: format)
                 if !unsupported.isEmpty {
-                    report.append("Questi campi per ora restano vuoti: \(unsupported.map { "{\($0)}" }.joined(separator: ", ")).")
+                    report.append(tr("Questi campi per ora restano vuoti: {0}.", unsupported.map { "{\($0)}" }.joined(separator: ", ")))
                 }
             }
             refresh()
             errorMessage = report.joined(separator: "\n\n")
         } catch {
-            errorMessage = "Non riesco a leggere questo backup di Yomitan: \(error.localizedDescription)"
+            errorMessage = tr("Non riesco a leggere questo backup di Yomitan: {0}", error.localizedDescription)
         }
     }
 
@@ -202,12 +208,12 @@ final class AppModel {
         Task.detached(priority: .utility) { [weak self] in
             try? store.buildMissingReverseIndexes { p in
                 let pct = p.total > 0 ? min(100, p.done * 100 / p.total) : 0
-                Task { @MainActor in self?.reverseIndexStatus = "Preparo la ricerca per significato in \(p.dictionaryTitle): \(pct)%" }
+                Task { @MainActor in self?.reverseIndexStatus = tr("Preparo la ricerca per significato in {0}: {1}%", p.dictionaryTitle, pct) }
             }
-            await MainActor.run { self?.reverseIndexStatus = "Preparo la ricerca in kana…" }
+            await MainActor.run { self?.reverseIndexStatus = tr("Preparo la ricerca in kana…") }
             try? store.buildMissingKanaIndexes { p in
                 let pct = p.total > 0 ? min(100, p.done * 100 / p.total) : 0
-                Task { @MainActor in self?.reverseIndexStatus = "Preparo la ricerca in kana (イタリアご = いたりあご) in \(p.dictionaryTitle): \(pct)%" }
+                Task { @MainActor in self?.reverseIndexStatus = tr("Preparo la ricerca in kana (イタリアご = いたりあご) in {0}: {1}%", p.dictionaryTitle, pct) }
             }
             await MainActor.run { self?.reverseIndexStatus = nil }
         }
@@ -238,10 +244,10 @@ final class AppModel {
 
     nonisolated private static func describe(_ error: Error) -> String {
         switch error {
-        case DictionaryStoreError.alreadyInstalled(let title): "「\(title)」 è già installato."
-        case YomitanImportError.missingIndex: "Questo file non sembra un dizionario Yomitan (manca index.json)."
-        case YomitanImportError.unsupportedFormat(let v): "Formato di dizionario \(v) non supportato."
-        default: "Import fallito: \(error.localizedDescription)"
+        case DictionaryStoreError.alreadyInstalled(let title): tr("「{0}」 è già installato.", title)
+        case YomitanImportError.missingIndex: tr("Questo file non sembra un dizionario Yomitan (manca index.json).")
+        case YomitanImportError.unsupportedFormat(let v): tr("Formato di dizionario {0} non supportato.", v)
+        default: tr("Import fallito: {0}", error.localizedDescription)
         }
     }
 

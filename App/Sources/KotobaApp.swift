@@ -9,24 +9,26 @@ struct KotobaApp: App {
         WindowGroup {
             TabView(selection: $tab) {
                 SearchView()
-                    .tabItem { Label("Cerca", systemImage: "magnifyingglass") }
+                    .tabItem { Label(tr("Cerca"), systemImage: "magnifyingglass") }
                     .tag(0)
                 CameraView(onLookup: { text in
                     model.pendingQuery = text
                     tab = 0
                 })
-                    .tabItem { Label("Fotocamera", systemImage: "text.viewfinder") }
+                    .tabItem { Label(tr("Fotocamera"), systemImage: "text.viewfinder") }
                     .tag(1)
                 DictionariesView()
-                    .tabItem { Label("Dizionari", systemImage: "books.vertical") }
+                    .tabItem { Label(tr("Dizionari"), systemImage: "books.vertical") }
                     .tag(2)
                 SettingsView()
-                    .tabItem { Label("Impostazioni", systemImage: "slider.horizontal.3") }
+                    .tabItem { Label(tr("Impostazioni"), systemImage: "slider.horizontal.3") }
                     .tag(3)
             }
             .environment(model)
             .tint(Palette.shu)
-            .preferredColorScheme(model.settings.appearance.theme.colorScheme)
+            .preferredColorScheme(ThemePalette.colorScheme(for: model.settings.appearance.theme))
+            // Rebuild the screens so every colour and word follows a new theme or language.
+            .id("\(model.settings.appearance.theme)|\(model.settings.language.rawValue)")
             .onOpenURL { url in
                 model.handle(url: url)
                 if url.host == "search" { tab = 0 }

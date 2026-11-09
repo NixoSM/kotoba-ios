@@ -25,11 +25,11 @@ struct DictionariesView: View {
                         Toggle(isOn: Binding(get: { dict.enabled }, set: { model.setEnabled($0, for: dict) })) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(dict.title)
-                                Text("\(dict.termCount.formatted()) voci · \(dict.metaCount.formatted()) frequenze/accenti · rev. \(dict.revision)")
+                                Text(tr("{0} voci · {1} frequenze/accenti · rev. {2}", dict.termCount.formatted(), dict.metaCount.formatted(), dict.revision))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 if model.settings.collapsedDictionaries.contains(dict.title) {
-                                    Label("Chiuso nei risultati", systemImage: "chevron.right.circle")
+                                    Label(tr("Chiuso nei risultati"), systemImage: "chevron.right.circle")
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
@@ -37,7 +37,7 @@ struct DictionariesView: View {
                         }
                         .swipeActions(edge: .leading) {
                             let closed = model.settings.collapsedDictionaries.contains(dict.title)
-                            Button(closed ? "Apri" : "Chiudi") {
+                            Button(closed ? tr("Apri") : tr("Chiudi")) {
                                 if closed {
                                     model.settings.collapsedDictionaries.remove(dict.title)
                                 } else {
@@ -47,24 +47,24 @@ struct DictionariesView: View {
                             .tint(.orange)
                         }
                         .swipeActions(edge: .trailing) {
-                            Button("Elimina", role: .destructive) { model.delete(dict) }
+                            Button(tr("Elimina"), role: .destructive) { model.delete(dict) }
                         }
                     }
                     .onMove { model.move(from: $0, to: $1) }
                     .onDelete { offsets in offsets.map { model.dictionaries[$0] }.forEach(model.delete) }
                 } header: {
-                    Text("Ordine dei risultati")
+                    Text(tr("Ordine dei risultati"))
                 } footer: {
-                    Text("Trascina per cambiare l'ordine in cui i dizionari compaiono nei risultati. Scorri verso destra per mostrare un dizionario chiuso nei risultati (si apre toccandone il nome), verso sinistra per eliminarlo.")
+                    Text(tr("Trascina per cambiare l'ordine in cui i dizionari compaiono nei risultati. Scorri verso destra per mostrare un dizionario chiuso nei risultati (si apre toccandone il nome), verso sinistra per eliminarlo."))
                 }
             }
             .scrollContentBackground(.hidden)
             .background(Palette.paper)
-            .navigationTitle("Dizionari")
+            .navigationTitle(tr("Dizionari"))
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { EditButton() }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { pickingFile = true } label: { Label("Importa", systemImage: "plus") }
+                    Button { pickingFile = true } label: { Label(tr("Importa"), systemImage: "plus") }
                         .disabled({ if case .running = model.importStatus { return true } else { return false } }())
                 }
             }
@@ -82,13 +82,13 @@ private struct ImportStatusRow: View {
         switch status {
         case .running(let title, let fraction):
             VStack(alignment: .leading, spacing: 6) {
-                Text("Importo \(title)…")
+                Text(tr("Importo {0}…", title))
                 ProgressView(value: fraction)
-                Text("Puoi lasciare l'app aperta: i dizionari grandi richiedono qualche minuto.")
+                Text(tr("Puoi lasciare l'app aperta: i dizionari grandi richiedono qualche minuto."))
                     .font(.caption).foregroundStyle(.secondary)
             }
         case .finished(let title, let terms):
-            Label("\(title): \(terms.formatted()) voci importate", systemImage: "checkmark.circle")
+            Label(tr("{0}: {1} voci importate", title, terms.formatted()), systemImage: "checkmark.circle")
         }
     }
 }

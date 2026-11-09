@@ -34,7 +34,7 @@ struct SearchView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Palette.paper, for: .navigationBar)
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "日本語 · italiano · English · romaji")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: tr("日本語 · italiano · English · romaji"))
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .onChange(of: model.pendingQuery) { _, newValue in
@@ -73,7 +73,7 @@ private struct HomeView: View {
                     Rectangle().fill(Palette.shu).frame(width: 4, height: 64)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("言葉").font(.mincho(44, bold: true)).foregroundStyle(Palette.ink)
-                        Text("\(model.dictionaries.filter(\.enabled).count) dizionari · \(totalTerms.formatted(.number.notation(.compactName))) voci")
+                        Text(tr("{0} dizionari · {1} voci", model.dictionaries.filter(\.enabled).count, totalTerms.formatted(.number.notation(.compactName))))
                             .font(.footnote.monospacedDigit())
                             .foregroundStyle(Palette.muted)
                     }
@@ -82,7 +82,7 @@ private struct HomeView: View {
 
                 if model.settings.history.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
-                        Label("Prova a cercare", systemImage: "sparkle")
+                        Label(tr("Prova a cercare"), systemImage: "sparkle")
                             .font(.caption.weight(.semibold)).textCase(.uppercase).foregroundStyle(Palette.shu)
                         ForEach(examples, id: \.query) { example in
                             Button { onSearch(example.query) } label: {
@@ -98,9 +98,9 @@ private struct HomeView: View {
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Text("Recenti").font(.caption.weight(.semibold)).textCase(.uppercase).foregroundStyle(Palette.shu)
+                            Text(tr("Recenti")).font(.caption.weight(.semibold)).textCase(.uppercase).foregroundStyle(Palette.shu)
                             Spacer()
-                            Button("Cancella") { model.settings.history = [] }
+                            Button(tr("Cancella")) { model.settings.history = [] }
                                 .font(.caption).tint(Palette.muted)
                         }
                         FlowLayout(spacing: 8) {
@@ -114,7 +114,7 @@ private struct HomeView: View {
                                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.rule))
                                 }
                                 .contextMenu {
-                                    Button("Rimuovi", systemImage: "trash", role: .destructive) {
+                                    Button(tr("Rimuovi"), systemImage: "trash", role: .destructive) {
                                         model.settings.history.removeAll { $0 == item }
                                     }
                                 }
@@ -130,10 +130,10 @@ private struct HomeView: View {
     }
 
     private let examples: [(query: String, hint: String)] = [
-        ("食べなかった", "forme coniugate"),
+        ("食べなかった", tr("forme coniugate")),
         ("taberu", "romaji"),
-        ("gatto", "dall'italiano"),
-        ("to run", "dall'inglese"),
+        ("gatto", tr("dall'italiano")),
+        ("to run", tr("dall'inglese")),
     ]
 }
 
@@ -143,8 +143,8 @@ private struct NoResults: View {
     var body: some View {
         VStack(spacing: 10) {
             Text("無").font(.mincho(64, bold: true)).foregroundStyle(Palette.rule)
-            Text("Nessun risultato per «\(query)»").font(.headline).foregroundStyle(Palette.ink)
-            Text("Controlla di aver attivato i dizionari giusti, o prova la forma base della parola.")
+            Text(tr("Nessun risultato per «{0}»", query)).font(.headline).foregroundStyle(Palette.ink)
+            Text(tr("Controlla di aver attivato i dizionari giusti, o prova la forma base della parola."))
                 .font(.subheadline).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
         }
         .padding(32)
@@ -155,8 +155,8 @@ private struct EmptyLibrary: View {
     var body: some View {
         VStack(spacing: 10) {
             Text("辞書").font(.mincho(64, bold: true)).foregroundStyle(Palette.rule)
-            Text("Nessun dizionario").font(.headline).foregroundStyle(Palette.ink)
-            Text("Importa un dizionario Yomitan (.zip) dalla scheda Dizionari.")
+            Text(tr("Nessun dizionario")).font(.headline).foregroundStyle(Palette.ink)
+            Text(tr("Importa un dizionario Yomitan (.zip) dalla scheda Dizionari."))
                 .font(.subheadline).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
         }
         .padding(32)

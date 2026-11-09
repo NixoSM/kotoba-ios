@@ -16,14 +16,14 @@ enum ResultsPage {
     static func html(outcome: AppModel.SearchOutcome, query: String, options o: Options) -> String {
         var direct = ""
         if let reading = outcome.romajiReading, !outcome.direct.isEmpty {
-            direct += section("Letto come \(reading)")
+            direct += section(tr("Letto come {0}", reading))
         }
         for (i, g) in outcome.direct.enumerated() {
             direct += entry(g, link: o.canMine ? "kotoba://mine?s=direct&i=\(i)" : nil, options: o)
         }
         var meaning = ""
         if !outcome.byMeaning.isEmpty {
-            meaning += section("Parole che significano «\(query.trimmingCharacters(in: .whitespaces))»")
+            meaning += section(tr("Parole che significano «{0}»", query.trimmingCharacters(in: .whitespaces)))
             if let status = o.indexStatus { meaning += "<p class=\"note\">\(GlossaryHTML.escape(status))</p>" }
             for (i, g) in outcome.byMeaning.enumerated() {
                 meaning += entry(g, link: o.canMine ? "kotoba://mine?s=meaning&i=\(i)" : nil, options: o)
@@ -31,7 +31,7 @@ enum ResultsPage {
         }
         var body = outcome.romajiFirst ? direct + meaning : meaning + direct
         if let ms = outcome.milliseconds, !(outcome.direct.isEmpty && outcome.byMeaning.isEmpty) {
-            body += "<p class=\"timing\">\(outcome.direct.count + outcome.byMeaning.count) parole · \(ms) ms</p>"
+            body += "<p class=\"timing\">\(tr("{0} parole · {1} ms", outcome.direct.count + outcome.byMeaning.count, ms))</p>"
         }
         return page(body: body, options: o)
     }
@@ -50,10 +50,10 @@ enum ResultsPage {
         """
         return """
         <!doctype html>
-        <html class="\(a.layout.rawValue)"><head>
+        <html lang="\(L10n.htmlLang)" class="\(a.layout.rawValue)"><head>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
         <style>\(FontCatalog.fontFaceCSS([bodyFont, headFont]))</style>
-        <style>\(variables)\(baseCSS)</style>
+        <style>\(ThemePalette.css(for: a.theme))\(variables)\(baseCSS)</style>
         <style>\(dictionaryCSS)</style>
         <style>\(a.customCSS)</style>
         </head><body>\(body)<script>\(tapScript)</script></body></html>
@@ -69,11 +69,11 @@ enum ResultsPage {
         let mined = o.mined.contains(g.minedKey)
         var html = "<article class=\"entry\"><header><div class=\"actions\">"
         let audio = "kotoba://audio?e=\(percent(g.expression))&r=\(percent(g.reading))"
-        html += "<a class=\"btn audio\" href=\"\(audio)\" aria-label=\"Ascolta\">\(icon("play"))</a>"
+        html += "<a class=\"btn audio\" href=\"\(audio)\" aria-label=\"\(tr("Ascolta"))\">\(icon("play"))</a>"
         if let link {
             html += mined
-                ? "<a class=\"btn mine done\" href=\"\(link)\" aria-label=\"Già in Anki\">\(icon("check"))</a>"
-                : "<a class=\"btn mine\" href=\"\(link)\" aria-label=\"Aggiungi ad Anki\">\(icon("plus"))</a>"
+                ? "<a class=\"btn mine done\" href=\"\(link)\" aria-label=\"\(tr("Già in Anki"))\">\(icon("check"))</a>"
+                : "<a class=\"btn mine\" href=\"\(link)\" aria-label=\"\(tr("Aggiungi ad Anki"))\">\(icon("plus"))</a>"
         }
         html += "</div>"
         html += "<h1 class=\"headword\" lang=\"ja\">\(headword(g, a))</h1>"
@@ -144,7 +144,7 @@ enum ResultsPage {
             let values = g.frequencies.map(\.value).filter { $0 > 0 }
             if !values.isEmpty {
                 let mean = Int((Double(values.count) / values.reduce(0) { $0 + 1 / $1 }).rounded())
-                freq = "<details class=\"freqs\"><summary>\(frequencyChip(name: "Frequenza", value: "\(mean)", accent: true))</summary><div class=\"freq-list\">"
+                freq = "<details class=\"freqs\"><summary>\(frequencyChip(name: tr("Frequenza"), value: "\(mean)", accent: true))</summary><div class=\"freq-list\">"
                     + g.frequencies.map(frequencyChip).joined() + "</div></details>"
             }
         }
@@ -266,12 +266,6 @@ enum ResultsPage {
     """
 
     private static let baseCSS = """
-    :root { color-scheme: light dark;
-      --paper:#F4EEE3; --raised:#FBF8F2; --ink:#1D1A16; --muted:#8A8276; --rule:#E2D8C6; --shu:#C23C24;
-      --chip:rgba(29,26,22,.06); }
-    @media (prefers-color-scheme: dark) { :root {
-      --paper:#13110E; --raised:#1D1A16; --ink:#ECE4D4; --muted:#8F877B; --rule:#2C2823; --shu:#E2603F;
-      --chip:rgba(236,228,212,.08); } }
     html { -webkit-text-size-adjust:100%; }
     body { margin:0; padding:6px 20px 130px; background:var(--paper); color:var(--ink);
            font-family:var(--body-font); font-size:var(--size); line-height:var(--leading);
