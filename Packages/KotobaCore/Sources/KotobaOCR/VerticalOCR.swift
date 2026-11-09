@@ -107,7 +107,7 @@ public enum VerticalOCR {
         guard px >= 0, px < W, py >= 0, py < H else { return nil }
 
         // 1. Columns near the point, from the ink profile across a window.
-        let r = Int(Double(min(W, H)) * 0.1), rv = Int(Double(H) * 0.2)
+        let r = Int(Double(min(W, H)) * 0.12), rv = Int(Double(H) * 0.15)
         let x0 = max(0, px - r), x1 = min(W, px + r), y0 = max(0, py - rv), y1 = min(H, py + rv)
         guard x1 - x0 >= 8 else { return nil }
         let bg = rowBackground(image, y0: y0, y1: y1) { _ in (x0, x1) }
@@ -129,26 +129,38 @@ public enum VerticalOCR {
                 merged.append(run)
             }
         }
-        // A run much wider than the others is a column with its furigana: cut it at its deepest valley.
-        let typical = median(merged.map { Double($0.1 - $0.0) })
+        // Columns cut by the window's edges, furigana and emphasis dots are narrower than
+        // the real thing: the size comes from the wider whole runs.
+        func whole(_ run: (Int, Int)) -> Bool { run.0 > 0 && run.1 < x1 - x0 }
+        func upperQuartile(_ values: [Double]) -> Double {
+            let sorted = values.sorted()
+            return sorted.isEmpty ? 0 : sorted[min(sorted.count - 1, sorted.count * 3 / 4)]
+        }
+        let inner = merged.filter(whole)
+        let typical = upperQuartile((inner.isEmpty ? merged : inner).map { Double($0.1 - $0.0) })
+        guard typical >= 2 else { return nil }
+        // A run much wider than that is a column with its furigana stuck to it: cut at the deepest valley.
         var columns: [(Int, Int)] = []
         for run in merged {
             let width = run.1 - run.0
             guard Double(width) > 1.45 * typical, width >= 8 else { columns.append(run); continue }
-            let inner = (run.0 + width / 6)..<(run.1 - width / 6)
+            let middle = (run.0 + width / 6)..<(run.1 - width / 6)
             let top = profile[run.0..<run.1].max() ?? 0
-            if let cut = inner.min(by: { profile[$0] < profile[$1] }), Double(profile[cut]) < 0.3 * Double(top) {
+            if let cut = middle.min(by: { profile[$0] < profile[$1] }), Double(profile[cut]) < 0.3 * Double(top),
+               Double(min(cut - run.0, run.1 - cut)) <= 0.65 * typical, Double(max(cut - run.0, run.1 - cut)) >= 0.75 * typical {
                 columns.append((run.0, cut))
                 columns.append((cut + 1, run.1))
             } else {
                 columns.append(run)
             }
         }
-        columns = columns.filter { $0.1 - $0.0 >= 2 }.map { ($0.0 + x0, $0.1 + x0) }
+        columns = columns.filter { $0.1 - $0.0 >= 2 }
         guard !columns.isEmpty else { return nil }
-        let widths = columns.map { Double($0.1 - $0.0) }.filter { $0 <= 2.5 * typical }.sorted()
-        guard !widths.isEmpty else { return nil }
-        var em = widths[min(widths.count - 1, widths.count * 3 / 4)] / 0.9
+        var widths = columns.filter { whole($0) && Double($0.1 - $0.0) <= 2.5 * typical }.map { Double($0.1 - $0.0) }
+        if widths.isEmpty { widths = columns.filter { Double($0.1 - $0.0) <= 2.5 * typical }.map { Double($0.1 - $0.0) } }
+        if widths.isEmpty { widths = columns.map { Double($0.1 - $0.0) } }
+        columns = columns.map { ($0.0 + x0, $0.1 + x0) }
+        var em = upperQuartile(widths) / 0.9
         guard em >= 6 else { return nil }
 
         // 2. The column under the point (furigana columns are too narrow to count).
@@ -158,6 +170,7 @@ public enum VerticalOCR {
         guard let column = main.min(by: { distance($0) < distance($1) }), Double(distance(column)) <= em else { return nil }
         let w = Double(column.1 - column.0)
         if w < 1.3 * em { em = max(em, w / 0.95) }
+        let widthEm = em
 
         // 3. Follow the column up and down: the glyphs' centres give its centre line, tilt included.
         let (center, slope) = trackColumn(image, x: Double(column.0 + column.1) / 2, y: py, width: w, em: em)
@@ -182,7 +195,7 @@ public enum VerticalOCR {
             guard b > a else { continue }
             for x in a..<b where Double(image.at(x, y)) < limit { inkCount[y - ya] += 1 }
         }
-        if let pitch = pitch(of: inkCount, width: w) { em = pitch }
+        if let pitch = pitch(of: inkCount, around: widthEm) { em = pitch }
 
         // 5. Character cells down the column.
         var grouped: [(Int, Int)] = []
@@ -212,7 +225,9 @@ public enum VerticalOCR {
 
         var fullBackground = [Double](repeating: 255, count: H)
         for y in ya..<yb { fullBackground[y] = background[y - ya] }
-        return Column(center: center, slope: slope, aimY: py, half: half, em: em,
+        // One pitch wide around the centre line: whole characters, but not the furigana beside them.
+        let band = min(max(0.55 * w, 0.5 * em), 0.62 * em)
+        return Column(center: center, slope: slope, aimY: py, half: band, em: em,
                       cells: Array(cells[s...e]), hit: hit - s, background: fullBackground)
     }
 
@@ -269,13 +284,14 @@ public enum VerticalOCR {
     }
 
     /// The period of the ink along a column: printed characters sit on a fixed pitch.
-    private static func pitch(of ink: [Int], width: Double) -> Double? {
+    /// `guess` (from the column widths) only bounds the search.
+    private static func pitch(of ink: [Int], around guess: Double) -> Double? {
         let n = ink.count
-        guard n > Int(4 * width) else { return nil }
+        guard n > Int(4 * guess) else { return nil }
         let mean = Double(ink.reduce(0, +)) / Double(n)
         let p = ink.map { Double($0) - mean }
-        let lo = max(2, Int(0.7 * width)), hi = min(n - 2, Int(1.7 * width))
-        guard hi > lo else { return nil }
+        let lo = max(2, Int(0.65 * guess)), hi = min(n - 2, Int(1.6 * guess))
+        guard hi > lo + 2 else { return nil }
         var scores = [Double](repeating: -1, count: hi + 1)
         var best: (lag: Int, score: Double)?
         for lag in lo...hi {
@@ -285,13 +301,8 @@ public enum VerticalOCR {
             scores[lag] = score
             if score > (best?.score ?? -1) { best = (lag, score) }
         }
-        guard let best, best.score > 0.12 else { return nil }
-        // Twice the pitch also lines up: take the half when it is nearly as strong.
-        let halfLag = Double(best.lag) / 2
-        if halfLag >= Double(lo) {
-            let near = (Int(halfLag) - 1...Int(halfLag) + 1).filter { $0 >= lo && $0 <= hi }.map { scores[$0] }.max() ?? -1
-            if near > 0.6 * best.score { return halfLag }
-        }
+        // A best lag at the edge of the range is the range talking, not the text.
+        guard let best, best.score > 0.12, best.lag > lo, best.lag < hi else { return nil }
         // Sub-pixel: the peak of a parabola through the best lag and its neighbours.
         if best.lag > lo, best.lag < hi {
             let a = scores[best.lag - 1], b = scores[best.lag], c = scores[best.lag + 1]

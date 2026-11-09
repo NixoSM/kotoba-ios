@@ -91,10 +91,11 @@ public struct OCRLine: Sendable, Equatable {
         OCRLine(text: text, boxes: boxes.map { $0 == .zero ? .zero : transform($0) }, vertical: vertical)
     }
 
-    /// Where `point` falls along the line, in characters: 2.5 is the middle of the
-    /// third character. `toView` turns a box into the space of `point`, with y going
-    /// down (screen points, image pixels); `reach` is the farthest a character may be.
-    public func position(of point: CGPoint, reach: CGFloat, toView: (CGRect) -> CGRect) -> Double? {
+    /// Where `point` falls along the line, in characters (2.5 is the middle of the
+    /// third character), and how far it is from the nearest character. `toView`
+    /// turns a box into the space of `point`, with y going down (screen points,
+    /// image pixels); `reach` is the farthest a character may be.
+    public func locate(_ point: CGPoint, reach: CGFloat, toView: (CGRect) -> CGRect) -> (position: Double, distance: CGFloat)? {
         var best: (index: Int, rect: CGRect, distance: CGFloat)?
         for (i, box) in boxes.enumerated() where box != .zero {
             let rect = toView(box)
@@ -106,6 +107,12 @@ public struct OCRLine: Sendable, Equatable {
         guard let best else { return nil }
         let r = best.rect
         let along = vertical ? (point.y - r.minY) / max(r.height, 1e-6) : (point.x - r.minX) / max(r.width, 1e-6)
-        return Double(best.index) + Double(min(max(along, 0), 0.999))
+        return (Double(best.index) + Double(min(max(along, 0), 0.999)), best.distance)
+    }
+
+    /// The boxes of characters `range`, joined (for highlighting a word).
+    public func frame(of range: Range<Int>) -> CGRect {
+        let r = range.clamped(to: 0..<boxes.count)
+        return boxes[r].filter { $0 != .zero }.reduce(CGRect.null) { $0.union($1) }
     }
 }
