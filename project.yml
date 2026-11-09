@@ -16,6 +16,9 @@ targets:
       - App/Resources
     dependencies:
       - package: KotobaCore
+        product: KotobaCore
+      - package: KotobaCore
+        product: KotobaOCR
       - target: KotobaShare
       - target: KotobaWidgets
     info:

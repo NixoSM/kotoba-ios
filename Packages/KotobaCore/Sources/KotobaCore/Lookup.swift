@@ -41,6 +41,24 @@ public struct TextScanner: Sendable {
         self.maxHeadwords = maxHeadwords
     }
 
+    /// How many characters at the start of `text` the longest dictionary word
+    /// covers (0: none). Cheap: no definitions are read.
+    public func longestMatch(_ text: some StringProtocol, in source: TermSource) -> Int {
+        let chars = Array(text)
+        var cache: [String: [TermEntry]] = [:]
+        for length in stride(from: min(maxLength, chars.count), through: 1, by: -1) {
+            let prefix = String(chars[..<length])
+            for variant in Set([prefix, Kana.toHiragana(prefix)]) {
+                for candidate in deinflector.deinflect(variant) {
+                    let found = cache[candidate.term] ?? source.entryHeaders(matching: candidate.term)
+                    cache[candidate.term] = found
+                    if found.contains(where: { candidate.matches(entryRules: $0.rules) }) { return length }
+                }
+            }
+        }
+        return 0
+    }
+
     public func scan(_ text: String, in source: TermSource) -> [LookupResult] {
         let chars = Array(text)
         var results: [LookupResult] = []

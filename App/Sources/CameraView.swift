@@ -5,6 +5,7 @@ import Vision
 import VisionKit
 import AVFoundation
 import KotobaCore
+import KotobaOCR
 
 /// Two ways to read Japanese around you:
 /// the lens (live camera, the word under the crosshair is looked up as you move)
@@ -218,13 +219,6 @@ private struct CameraResultsSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
         }
     }
-}
-
-/// A line of text found on the photo, with a box for every character
-/// (Vision's normalized coordinates: origin bottom-left).
-struct OCRLine {
-    var text: [Character]
-    var boxes: [CGRect]
 }
 
 /// A zoomable photo. In tap mode every word is outlined and a tap looks up the

@@ -3,73 +3,31 @@ import CoreVideo
 import Foundation
 import Vision
 
-/// An 8-bit grayscale copy of an image, origin top-left.
-struct GrayImage {
-    let width: Int
-    let height: Int
-    var pixels: [UInt8]
-
-    init(width: Int, height: Int, pixels: [UInt8]) {
-        self.width = width
-        self.height = height
-        self.pixels = pixels
-    }
-
-    /// Renders an image, scaled down so its long side is at most `maxSide`.
-    init?(cgImage: CGImage, maxSide: Int = 2400) {
-        let scale = min(1, Double(maxSide) / Double(max(cgImage.width, cgImage.height)))
-        let w = max(1, Int(Double(cgImage.width) * scale)), h = max(1, Int(Double(cgImage.height) * scale))
-        var buffer = [UInt8](repeating: 255, count: w * h)
-        let ok = buffer.withUnsafeMutableBytes { raw -> Bool in
-            guard let context = CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
-                                          space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return false }
-            context.interpolationQuality = .high
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
-            return true
-        }
-        guard ok else { return nil }
-        self.init(width: w, height: h, pixels: buffer)
-    }
-
-    /// From a camera frame in BGRA.
-    init?(pixelBuffer: CVPixelBuffer) {
-        guard CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_32BGRA else { return nil }
-        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
-        guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else { return nil }
-        let w = CVPixelBufferGetWidth(pixelBuffer), h = CVPixelBufferGetHeight(pixelBuffer)
-        let rowBytes = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        let source = base.assumingMemoryBound(to: UInt8.self)
-        var buffer = [UInt8](repeating: 0, count: w * h)
-        buffer.withUnsafeMutableBufferPointer { out in
-            for y in 0..<h {
-                let row = source + y * rowBytes
-                for x in 0..<w {
-                    let p = row + x * 4
-                    out[y * w + x] = UInt8((Int(p[2]) * 77 + Int(p[1]) * 150 + Int(p[0]) * 29) >> 8)
-                }
-            }
-        }
-        self.init(width: w, height: h, pixels: buffer)
-    }
-
-    @inline(__always) func at(_ x: Int, _ y: Int) -> UInt8 { pixels[y * width + x] }
-}
-
 /// Reads vertical Japanese (縦書き), which Apple's text recognizer can't.
 ///
 /// The idea: find the column under a point, cut it into character cells
 /// (typeset text sits on a square grid), and lay the cells side by side as a
 /// horizontal line. Apple's recognizer reads that line well, and every
 /// character it returns maps back to its cell on the page.
-enum VerticalOCR {
-    struct Result {
-        var line: OCRLine
+public enum VerticalOCR {
+    public struct Result: Sendable {
+        /// The column's text, top to bottom, with a box for every character
+        /// (normalized to the image, origin bottom-left).
+        public var line: OCRLine
         /// Index in `line.text` of the character at the point.
-        var hit: Int
+        public var hit: Int
+        /// Where the point falls inside that character, 0 (top) to 1 (bottom).
+        public var fraction: Double
+        /// Character size in pixels.
+        public var em: Double
+        /// The column's area, normalized like the boxes.
+        public var frame: CGRect
+        /// Aim position in characters along the line, for `WordAim`.
+        public var position: Double { Double(hit) + fraction }
     }
 
-    static func read(_ image: GrayImage, at point: CGPoint) -> Result? {
+    /// Reads the column under `point` (pixels, origin top-left).
+    public static func read(_ image: GrayImage, at point: CGPoint) -> Result? {
         guard let column = findColumn(image, at: point) else { return nil }
         guard let tile = makeTile(image, column: column) else { return nil }
         return recognize(tile, column: column, image: image)
@@ -84,6 +42,8 @@ enum VerticalOCR {
         var cells: [(Int, Int)]
         /// The cell under the point.
         var hit: Int
+        /// The point's row.
+        var aimY: Int
         /// Paper brightness per row.
         var background: [Double]
     }
@@ -215,7 +175,7 @@ enum VerticalOCR {
 
         var fullBackground = [Double](repeating: 255, count: H)
         for y in ya..<yb { fullBackground[y] = background[y - ya] }
-        return Column(x0: xa, x1: xb, em: em, cells: Array(cells[s...e]), hit: hit - s, background: fullBackground)
+        return Column(x0: xa, x1: xb, em: em, cells: Array(cells[s...e]), hit: hit - s, aimY: py, background: fullBackground)
     }
 
     // MARK: Tile
@@ -330,16 +290,26 @@ enum VerticalOCR {
         }
         guard !found.isEmpty else { return nil }
         let W = Double(image.width), H = Double(image.height)
-        var line = OCRLine(text: [], boxes: [])
+        var line = OCRLine(text: [], boxes: [], vertical: true)
         var hit: Int?
+        var fraction = 0.0
         for item in found {
             let cell = column.cells[item.cell]
             line.text.append(item.char)
             line.boxes.append(CGRect(x: Double(column.x0) / W, y: 1 - Double(cell.1) / H,
                                      width: Double(column.x1 - column.x0) / W, height: Double(cell.1 - cell.0) / H))
-            if hit == nil, item.cell >= column.hit { hit = line.text.count - 1 }
+            if hit == nil, item.cell >= column.hit {
+                hit = line.text.count - 1
+                if item.cell == column.hit {
+                    fraction = min(0.999, max(0, Double(column.aimY - cell.0) / Double(max(1, cell.1 - cell.0))))
+                }
+            }
         }
-        return Result(line: line, hit: hit ?? line.text.count - 1)
+        if hit == nil { fraction = 0.999 }
+        let top = column.cells.first?.0 ?? 0, bottom = column.cells.last?.1 ?? 0
+        let frame = CGRect(x: Double(column.x0) / W, y: 1 - Double(bottom) / H,
+                           width: Double(column.x1 - column.x0) / W, height: Double(bottom - top) / H)
+        return Result(line: line, hit: hit ?? line.text.count - 1, fraction: fraction, em: column.em, frame: frame)
     }
 
     /// Vertical-only shapes the recognizer may return as something else.

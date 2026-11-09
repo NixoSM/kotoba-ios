@@ -14,8 +14,21 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
-      - name: Test the dictionary engine
-        run: swift test --package-path Packages/KotobaCore
+      - name: Test the dictionary engine and the vertical text reader
+        env:
+          KOTOBA_BENCH_OUT: ${{ runner.temp }}/bench
+        shell: bash
+        run: swift test --package-path Packages/KotobaCore 2>&1 | tee test.log
+      - name: Reading benchmark
+        if: always()
+        run: grep -A 40 "^BENCH" test.log | grep -v "^Test Case" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reading-bench
+          path: ${{ runner.temp }}/bench
+          if-no-files-found: ignore
+          retention-days: 7
 
   build-ipa:
     needs: test-core
