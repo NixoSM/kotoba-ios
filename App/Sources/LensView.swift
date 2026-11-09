@@ -305,7 +305,7 @@ private struct LiveReader: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ view: LiveReaderView, coordinator: ()) {
-        view.stop()
+        view.retire()
     }
 }
 
@@ -385,15 +385,26 @@ final class LiveReaderView: UIView, AVCaptureVideoDataOutputSampleBufferDelegate
         layer.addSublayer(marked)
         addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:))))
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped(_:))))
-        // A volume button takes the photo, as in the Camera app.
-        addInteraction(AVCaptureEventInteraction { [weak self] event in
-            if event.phase == .ended { self?.onShutter?() }
-        })
+        if #available(iOS 17.2, *) {
+            // A volume button takes the photo, as in the Camera app.
+            addInteraction(AVCaptureEventInteraction { [weak self] event in
+                if event.phase == .ended { self?.onShutter?() }
+            })
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// Off screen for good: never starts again (a new view takes its place).
+    private var retired = false
+
+    func retire() {
+        retired = true
+        stop()
+    }
+
     func start() {
+        guard !retired else { return }
         if !configured { configure() }
         if motion.isGyroAvailable, !motion.isGyroActive {
             motion.gyroUpdateInterval = 1.0 / 30
@@ -689,9 +700,11 @@ final class LiveReaderView: UIView, AVCaptureVideoDataOutputSampleBufferDelegate
         guard photoReady, session.isRunning else { return fallback }
         let settings = AVCapturePhotoSettings()
         settings.photoQualityPrioritization = .balanced
-        settings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
+        if photoOutput.maxPhotoDimensions.width > 0 { settings.maxPhotoDimensions = photoOutput.maxPhotoDimensions }
         // Reading a page shouldn't sound like taking a picture (where the law allows it).
-        if photoOutput.isShutterSoundSuppressionSupported { settings.isShutterSoundSuppressionEnabled = true }
+        if #available(iOS 18.0, *), photoOutput.isShutterSoundSuppressionSupported {
+            settings.isShutterSoundSuppressionEnabled = true
+        }
         let visible = visibleFraction
         let frameSize = imageSize
         let id = settings.uniqueID

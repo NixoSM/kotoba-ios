@@ -528,7 +528,13 @@ public enum VerticalOCR {
             }
             if chars[k] == "「" { open += 1 } else if chars[k] == "」" { open = max(0, open - 1) }
         }
-        return zip(merged, chars).map { ($0.0.cell, $0.1) }
+        // 。 or 、 split over two cells reads twice.
+        var out: [(cell: Int, char: Character)] = []
+        for (item, c) in zip(merged, chars) {
+            if (c == "。" || c == "、"), out.last?.char == c { continue }
+            out.append((item.cell, c))
+        }
+        return out
     }
 
     /// Vertical-only shapes the recognizer may return as something else.

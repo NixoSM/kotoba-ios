@@ -24,6 +24,7 @@ final class PunctuationTests: XCTestCase {
     func testPeriods() {
         XCTAssertEqual(String(VerticalOCR.tidy([(0, "た"), (1, "."), (1, "."), (2, "宝")]).map(\.char)), "た。宝")
         XCTAssertEqual(tidy("数値は1.5です"), "数値は1.5です")
+        XCTAssertEqual(tidy("ていた..宝は"), "ていた。宝は")
     }
 
     func testRealTextIsLeftAlone() {
