@@ -10,6 +10,14 @@ final class HookTextTests: XCTestCase {
         XCTAssertEqual(HookText.message("{壊れた"), "{壊れた")
     }
 
+    func testMessageWithHistoryPosition() {
+        let m = HookText.parse(#"{"sentence":"三行目","id":3,"session":"00ab"}"#)
+        XCTAssertEqual(m.text, "三行目")
+        XCTAssertEqual(m.id, 3)
+        XCTAssertEqual(m.session, "00ab")
+        XCTAssertNil(HookText.parse("ただの行").id)
+    }
+
     func testJoinsLinesOfOneTextBox() {
         var rules = HookText.Rules()
         XCTAssertEqual(HookText.clean("今日は\r\n 天気が\nいい ", rules: rules), "今日は天気がいい")

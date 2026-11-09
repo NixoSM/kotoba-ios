@@ -82,3 +82,28 @@ jobs:
           name: Kotoba-ipa
           path: Kotoba.ipa
           retention-days: 30
+
+  # Kotoba's Textractor extension (Windows DLLs, cross-built with MinGW).
+  textractor-extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MinGW
+        run: sudo apt-get update -q && sudo apt-get install -y -q mingw-w64
+      - name: Test the server (Linux build of the same code)
+        working-directory: tools/textractor-extension
+        run: |
+          gcc -DKOTOBA_TEST -O1 -fsanitize=address -o test_server kotoba_websocket.c -lpthread
+          python3 test_extension.py ./test_server
+      - name: Build the x86 and x64 DLLs
+        working-directory: tools/textractor-extension
+        run: |
+          mkdir -p out
+          i686-w64-mingw32-gcc   -O2 -s -Wall -shared -o out/kotoba_websocket_x86.dll kotoba_websocket.c -lws2_32 -static-libgcc
+          x86_64-w64-mingw32-gcc -O2 -s -Wall -shared -o out/kotoba_websocket_x64.dll kotoba_websocket.c -lws2_32 -static-libgcc
+          sha256sum out/*.dll
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kotoba-Textractor
+          path: tools/textractor-extension/out/*.dll
+          retention-days: 90

@@ -343,9 +343,9 @@ enum L10n {
         "Non ho trovato Textractor sulla Wi-Fi. Fai avanzare una riga nel gioco (l'estensione si accende con la prima riga) e riprova, oppure scrivi l'indirizzo a mano.":
             ("Textractor wasn't found on the Wi-Fi. Advance one line in the game (the extension starts with the first line) and try again, or type the address yourself.",
              "Wi-FiでTextractorが見つかりません。ゲームのテキストを1行進めてから(拡張機能は最初の行で起動します)もう一度試すか、アドレスを手で入力してください。"),
-        "Sul PC serve Textractor con l'estensione textractor_websocket (porta 6677). Telefono e PC devono essere sulla stessa Wi-Fi. La guida passo passo è qui sotto.":
-            ("The PC needs Textractor with the textractor_websocket extension (port 6677). Phone and PC must be on the same Wi-Fi. Step-by-step guide below.",
-             "PCにはTextractorとtextractor_websocket拡張機能(ポート6677)が必要です。iPhoneとPCは同じWi-Fiにつないでください。手順は下にあります。"),
+        "Sul PC serve Textractor con l'estensione di Kotoba (o textractor_websocket), porta 6677. Quella di Kotoba tiene le righe arrivate mentre il telefono dorme. Telefono e PC devono essere sulla stessa rete di casa. La guida passo passo è qui sotto.":
+            ("The PC needs Textractor with Kotoba's extension (or textractor_websocket), port 6677. Kotoba's keeps the lines that arrive while the phone sleeps. Phone and PC must be on the same home network. Step-by-step guide below.",
+             "PCにはTextractorとKotobaの拡張機能(またはtextractor_websocket)、ポート6677が必要です。Kotobaの拡張機能はiPhoneがスリープ中に届いた行も保存します。iPhoneとPCは同じ家庭内ネットワークにつないでください。手順は下にあります。"),
         "Ricevi anche dal PC verso il telefono": ("Also let the PC send to the phone", "PCからiPhoneへの送信も受け付ける"),
         "Indirizzo del telefono": ("Phone address", "iPhoneのアドレス"),
         "Non sei su una Wi-Fi": ("Not on Wi-Fi", "Wi-Fiに接続されていません"),
@@ -387,9 +387,9 @@ enum L10n {
         "Scarica Textractor da github.com/Artikash/Textractor (Releases › Textractor-5.2.0-Zip-Version-English-Only.zip) ed estrailo: dentro ci sono le cartelle x86 e x64.":
             ("Download Textractor from github.com/Artikash/Textractor (Releases › Textractor-5.2.0-Zip-Version-English-Only.zip) and extract it: it holds an x86 and an x64 folder.",
              "github.com/Artikash/Textractor(Releases › Textractor-5.2.0-Zip-Version-English-Only.zip)からTextractorをダウンロードして展開します。中にx86とx64のフォルダがあります。"),
-        "Scarica textractor_websocket_x86.zip e textractor_websocket_x64.zip da github.com/kuroahna/textractor_websocket (Releases). Metti ogni .dll nella cartella x86 o x64 di Textractor.":
-            ("Download textractor_websocket_x86.zip and textractor_websocket_x64.zip from github.com/kuroahna/textractor_websocket (Releases). Put each .dll in Textractor's x86 or x64 folder.",
-             "github.com/kuroahna/textractor_websocket(Releases)からtextractor_websocket_x86.zipとtextractor_websocket_x64.zipをダウンロードし、それぞれの.dllをTextractorのx86とx64フォルダに入れます。"),
+        "Scarica l'estensione di Kotoba: su GitHub › Actions › l'ultima Build verde › Kotoba-Textractor. Metti kotoba_websocket_x86.dll nella cartella x86 di Textractor e kotoba_websocket_x64.dll in x64.":
+            ("Download Kotoba's extension: on GitHub › Actions › the latest green Build › Kotoba-Textractor. Put kotoba_websocket_x86.dll in Textractor's x86 folder and kotoba_websocket_x64.dll in x64.",
+             "Kotobaの拡張機能をダウンロードします: GitHub › Actions › 最新の成功したBuild › Kotoba-Textractor。kotoba_websocket_x86.dllをTextractorのx86フォルダに、kotoba_websocket_x64.dllをx64フォルダに入れます。"),
         "Apri Textractor › Extensions › tasto destro › Add extension › scegli «*.dll» in basso › seleziona la .dll. Fallo sia in x86 sia in x64.":
             ("Open Textractor › Extensions › right-click › Add extension › pick “*.dll” at the bottom › select the .dll. Do it in both x86 and x64.",
              "Textractor › Extensions › 右クリック › Add extension › 下で「*.dll」を選び › .dllを選択。x86とx64の両方で行います。"),

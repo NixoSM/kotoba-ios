@@ -96,7 +96,8 @@ final class HookerModel {
             if case .retrying = state { self.failuresInARow += 1 }
             if state == .connected { self.failuresInARow = 0 }
         }
-        socket.onText = { [weak self] raw in self?.receive(HookText.message(raw)) }
+        socket.onText = { [weak self] raw in self?.receiveFromSocket(raw) }
+        socket.resumeQuery = { [weak self] in self?.resumeQuery ?? "" }
         inbox.onState = { [weak self] in self?.inboxState = $0 }
         inbox.onText = { [weak self] in self?.receive($0) }
         applyConnections()
@@ -145,6 +146,37 @@ final class HookerModel {
     }
 
     // MARK: Lines
+
+    // MARK: Catching up
+
+    /// The last line had from Kotoba's extension, which keeps a history: after
+    /// the phone slept it sends everything after this, and nothing twice.
+    private var resumePoint: (session: String, id: Int)? {
+        get {
+            let d = UserDefaults.standard
+            guard let session = d.string(forKey: "texthooker.session") else { return nil }
+            return (session, d.integer(forKey: "texthooker.lastID"))
+        }
+        set {
+            UserDefaults.standard.set(newValue?.session, forKey: "texthooker.session")
+            UserDefaults.standard.set(newValue?.id ?? 0, forKey: "texthooker.lastID")
+        }
+    }
+
+    private var resumeQuery: String {
+        guard let point = resumePoint,
+              let session = point.session.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { return "kotoba=1" }
+        return "kotoba=1&session=\(session)&since=\(point.id)"
+    }
+
+    private func receiveFromSocket(_ raw: String) {
+        let message = HookText.parse(raw)
+        if let id = message.id, let session = message.session {
+            if let point = resumePoint, point.session == session, id <= point.id { return }
+            resumePoint = (session, id)
+        }
+        receive(message.text)
+    }
 
     func receive(_ raw: String) {
         let text = HookText.clean(raw, rules: settings.rules, readings: readings)
