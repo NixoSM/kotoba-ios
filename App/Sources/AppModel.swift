@@ -33,6 +33,8 @@ final class AppModel {
     let store: DictionaryStore?
     let scanner = TextScanner()
 
+    var isImporting: Bool { if case .running = importStatus { true } else { false } }
+
     enum ImportStatus: Equatable {
         case running(title: String, fraction: Double)
         case finished(title: String, terms: Int)

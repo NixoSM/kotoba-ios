@@ -23,14 +23,17 @@ public enum DictionaryStoreError: Error, Equatable {
 public final class DictionaryStore: TermSource, @unchecked Sendable {
     private let db: SQLiteDatabase
     private let lock = NSLock()
+    private let path: String
 
     public static let schemaVersion = 5
 
     /// Pass `":memory:"` for a throwaway store (tests).
     public init(path: String) throws {
+        self.path = path
         db = try SQLiteDatabase(path: path)
         try db.execute("""
         PRAGMA journal_mode = WAL;
+        PRAGMA busy_timeout = 5000;
         PRAGMA synchronous = NORMAL;
         PRAGMA foreign_keys = ON;
         PRAGMA mmap_size = 268435456;
@@ -259,27 +262,44 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     /// Installs a dictionary in a single transaction: if `body` throws,
     /// nothing is left behind.
     public func install(index: DictionaryIndex, styles: String = "", _ body: (ImportSession) throws -> Void) throws -> InstalledDictionary {
-        try locked {
-            frequencyDictionaryCache = nil
-            return try db.transaction {
-                var exists = false
-                try db.prepare("SELECT 1 FROM dictionaries WHERE title = ?1").bind(index.title).rows { _ in exists = true }
-                if exists { throw DictionaryStoreError.alreadyInstalled(title: index.title) }
-
-                var priority = 0
-                try db.prepare("SELECT COALESCE(MAX(priority) + 1, 0) FROM dictionaries").rows { priority = $0.int(0) }
-                let indexJSON = try JSONEncoder().encode(index)
-                try db.prepare("INSERT INTO dictionaries (title, revision, index_json, priority, styles) VALUES (?1, ?2, ?3, ?4, ?5)")
-                    .bind(index.title, index.revision, indexJSON, priority, styles).run()
-                let id = db.lastInsertRowID
-
-                let session = try ImportSession(db: db, dictID: id)
-                try body(session)
-                try db.prepare("UPDATE dictionaries SET term_count = ?1, meta_count = ?2, reverse_indexed = 1, kana_indexed = 1 WHERE id = ?3")
-                    .bind(session.termCount, session.metaCount, id).run()
-                return InstalledDictionary(id: id, title: index.title, revision: index.revision, priority: priority,
-                                           enabled: true, termCount: session.termCount, metaCount: session.metaCount)
+        // A file database gets its own connection for the import: the import
+        // holds one long write transaction (minutes, for JMdict), and on the
+        // shared connection it held the lock too, so every search and every
+        // tap in the dictionary list waited for it. Searches now keep reading
+        // the dictionaries as they were until the import commits.
+        guard path != ":memory:", !path.isEmpty else {
+            return try locked {
+                frequencyDictionaryCache = nil
+                return try Self.install(index: index, styles: styles, in: db, body)
             }
+        }
+        let importDB = try SQLiteDatabase(path: path)
+        try importDB.execute("PRAGMA busy_timeout = 10000; PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL; PRAGMA cache_size = -16000;")
+        let installed = try Self.install(index: index, styles: styles, in: importDB, body)
+        locked { frequencyDictionaryCache = nil }
+        return installed
+    }
+
+    private static func install(index: DictionaryIndex, styles: String, in db: SQLiteDatabase,
+                                _ body: (ImportSession) throws -> Void) throws -> InstalledDictionary {
+        try db.transaction {
+            var exists = false
+            try db.prepare("SELECT 1 FROM dictionaries WHERE title = ?1").bind(index.title).rows { _ in exists = true }
+            if exists { throw DictionaryStoreError.alreadyInstalled(title: index.title) }
+
+            var priority = 0
+            try db.prepare("SELECT COALESCE(MAX(priority) + 1, 0) FROM dictionaries").rows { priority = $0.int(0) }
+            let indexJSON = try JSONEncoder().encode(index)
+            try db.prepare("INSERT INTO dictionaries (title, revision, index_json, priority, styles) VALUES (?1, ?2, ?3, ?4, ?5)")
+                .bind(index.title, index.revision, indexJSON, priority, styles).run()
+            let id = db.lastInsertRowID
+
+            let session = try ImportSession(db: db, dictID: id)
+            try body(session)
+            try db.prepare("UPDATE dictionaries SET term_count = ?1, meta_count = ?2, reverse_indexed = 1, kana_indexed = 1 WHERE id = ?3")
+                .bind(session.termCount, session.metaCount, id).run()
+            return InstalledDictionary(id: id, title: index.title, revision: index.revision, priority: priority,
+                                       enabled: true, termCount: session.termCount, metaCount: session.metaCount)
         }
     }
 
