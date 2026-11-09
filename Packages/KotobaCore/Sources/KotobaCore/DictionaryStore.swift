@@ -402,12 +402,13 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
 
     public func reverseSearch(_ text: String, limit: Int = 60) -> [ReverseHit] {
         guard let match = ReverseSearch.ftsQuery(for: text) else { return [] }
+        let query = ReverseSearch.Query(text)
         // 1. Score the matching definitions using the index text alone.
         let scored: [(id: Int64, score: Int)] = locked {
             var out: [(id: Int64, score: Int)] = []
             try? cached("SELECT rowid, text FROM gloss_fts WHERE gloss_fts MATCH ?1 ORDER BY bm25(gloss_fts) LIMIT 2000")
                 .bind(match).rows { r in
-                    let score = ReverseSearch.score(query: text, indexText: r.string(1))
+                    let score = ReverseSearch.score(query, indexText: r.string(1))
                     if score > 0 { out.append((r.int64(0), score)) }
                 }
             return out

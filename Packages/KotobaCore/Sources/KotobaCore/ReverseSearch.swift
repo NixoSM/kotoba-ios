@@ -55,10 +55,25 @@ public enum ReverseSearch {
 
     /// How well an indexed text answers the query. 0 means "not a real match".
     public static func score(query: String, indexText: String) -> Int {
-        var q = normalize(query)
-        if q.hasPrefix("to ") { q.removeFirst(3) } // "to run" is asked as "run"
+        score(Query(query), indexText: indexText)
+    }
+
+    /// A query normalized once, for scoring many definitions against it
+    /// (reverse search scores up to 2000 per keystroke).
+    public struct Query {
+        let text: String
+        let words: Set<Substring>
+        public init(_ query: String) {
+            var q = ReverseSearch.normalize(query)
+            if q.hasPrefix("to ") { q.removeFirst(3) } // "to run" is asked as "run"
+            text = q
+            words = Set(q.split(separator: " "))
+        }
+    }
+
+    public static func score(_ query: Query, indexText: String) -> Int {
+        let q = query.text, qWords = query.words
         guard !q.isEmpty else { return 0 }
-        let qWords = Set(q.split(separator: " "))
         var best = 0
         for (position, raw) in indexText.split(separator: "\n").enumerated() {
             var s = normalize(String(raw))
@@ -106,7 +121,8 @@ public enum ReverseSearch {
     /// the word that actually means "sarto" rather than its parent.
     public static func subentry(matching query: String, glossaryJSON: Data) -> String? {
         let lines = GlossaryText.items(fromJSON: glossaryJSON).flatMap { $0.split(separator: "\n").map(String.init) }
-        guard let hit = lines.firstIndex(where: { score(query: query, indexText: segments(of: [$0]).joined(separator: "\n")) > 0 }) else {
+        let normalized = Query(query)
+        guard let hit = lines.firstIndex(where: { score(normalized, indexText: segments(of: [$0]).joined(separator: "\n")) > 0 }) else {
             return nil
         }
         var j = hit - 1

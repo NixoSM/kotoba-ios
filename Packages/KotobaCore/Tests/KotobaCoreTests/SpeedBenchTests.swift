@@ -17,6 +17,13 @@ final class SpeedBenchTests: XCTestCase {
     private static let kanji = Array("日本語学校先生時間食飲行来見聞読書話言思知出入上下大小中長高新古多少早遅近遠明暗強弱重軽")
     private static let kana = Array("あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわん")
 
+    /// 0 → "qa", 1 → "qb"…: a made-up word unique to one entry.
+    static func letters(_ n: Int) -> String {
+        var n = n, out = "q"
+        repeat { out.append(Character(UnicodeScalar(97 + n % 26)!)); n /= 26 } while n > 0
+        return out
+    }
+
     /// A deterministic generator, so every run builds the same dictionary.
     private struct Rand {
         var state: UInt64
@@ -41,7 +48,7 @@ final class SpeedBenchTests: XCTestCase {
             for _ in 0..<(2 + r.next(4)) { reading.append(Self.kana[r.next(Self.kana.count)]) }
             if verb { expression += "べる"; reading += "べる" }
             words.append(expression)
-            let gloss = #"[{"type":"structured-content","content":[{"tag":"ul","data":{"content":"glossary"},"content":[{"tag":"li","content":"meaning \#(i) word"},{"tag":"li","content":"sense \#(r.next(1000)) thing"}]}]}]"#
+            let gloss = #"[{"type":"structured-content","content":[{"tag":"ul","data":{"content":"glossary"},"content":[{"tag":"li","content":"meaning \#(Self.letters(i)) word"},{"tag":"li","content":"sense \#(r.next(1000)) thing"}]}]}]"#
             rows.append(#"["\#(expression)","\#(reading)","\#(verb ? "v1" : "n")","\#(verb ? "v1" : "")",\#(r.next(100)),\#(gloss),\#(i),""]"#)
             if rows.count == 10_000 || i == count - 1 {
                 banks["term_bank_\(banks.count + 1).json"] = "[" + rows.joined(separator: ",") + "]"
@@ -107,9 +114,11 @@ final class SpeedBenchTests: XCTestCase {
         say(String(format: "BENCH engine longest match (camera lens): %.2f ms per line", longestMs / Double(sentences.count)))
 
         var hits = 0
-        let reverseMs = time { for i in 0..<100 { hits += store.reverseSearch("meaning \(i * 37)").count } }
-        XCTAssertGreaterThan(hits, 0)
-        say(String(format: "BENCH engine reverse search: %.2f ms per query", reverseMs / 100))
+        let reverseMs = time { for i in 0..<100 { hits += store.reverseSearch(Self.letters(i * 37)).count } }
+        XCTAssertGreaterThanOrEqual(hits, 100)
+        say(String(format: "BENCH engine reverse search, rare word: %.2f ms per query", reverseMs / 100))
+        let commonMs = time { for _ in 0..<10 { _ = store.reverseSearch("meaning") } }
+        say(String(format: "BENCH engine reverse search, word in every definition (worst case): %.1f ms per query", commonMs / 10))
 
         let size = ["", "-wal"].reduce(0) { total, suffix in
             total + ((try? FileManager.default.attributesOfItem(atPath: path + suffix)[.size] as? Int) ?? 0)
