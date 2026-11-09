@@ -9,6 +9,12 @@ import KotobaCore
 /// Runs the vertical reader, with Apple's real recognizer, on pages rendered
 /// here and on a photo of a light novel, and prints how well it does.
 /// The numbers are for tuning: the asserts only catch a reader that broke.
+/// Bench lines go to standard error: XCTest's standard output is buffered and
+/// gets lost when the log is piped.
+private func say(_ line: String) {
+    FileHandle.standardError.write(Data((line + "\n").utf8))
+}
+
 final class VerticalBenchTests: XCTestCase {
     // Original text in the style of a light novel (no copyright to worry about).
     static let columns = [
@@ -87,9 +93,9 @@ final class VerticalBenchTests: XCTestCase {
                 }
             }
             totalReads += reads; totalFound += found
-            print(String(format: "BENCH synthetic %@ (em %.0f): found %d/%d, aim char %d/%d, CER %.1f%%, %.0f ms/read",
+            say(String(format: "BENCH synthetic %@ (em %.0f): found %d/%d, aim char %d/%d, CER %.1f%%, %.0f ms/read",
                          style.name, style.em, found, reads, hits, reads, 100 * Double(errors) / Double(max(1, length)), 1000 * seconds / Double(max(1, reads))))
-            report.forEach { print($0) }
+            report.forEach { say($0) }
         }
         XCTAssertGreaterThan(totalFound, totalReads / 2, "The vertical reader stopped finding text")
     }
@@ -130,8 +136,8 @@ final class VerticalBenchTests: XCTestCase {
                 right += ok; total += tries
                 lines.append("  \(target.word): \(ok)/\(tries)" + (wrong.isEmpty ? "" : "  wrong: \(wrong.joined(separator: " "))"))
             }
-            print("BENCH aim \(style.name): \(right)/\(total) on the right word")
-            lines.forEach { print($0) }
+            say("BENCH aim \(style.name): \(right)/\(total) on the right word")
+            lines.forEach { say($0) }
         }
     }
 
@@ -174,8 +180,8 @@ final class VerticalBenchTests: XCTestCase {
                     if f == 0.5 || distance > 1 { report.append("  c\(c) @\(f) em \(Int(result.em)) err \(distance): \(read)") }
                 }
             }
-            print(String(format: "BENCH real %@ (%dpx wide): found %d/%d, CER %.1f%%", label, gray.width, found, reads, 100 * Double(errors) / Double(max(1, length))))
-            report.forEach { print($0) }
+            say(String(format: "BENCH real %@ (%dpx wide): found %d/%d, CER %.1f%%", label, gray.width, found, reads, 100 * Double(errors) / Double(max(1, length))))
+            report.forEach { say($0) }
             if label == "full", let col = VerticalOCR.findColumn(gray, at: CGPoint(x: 466 * scale, y: 450 * scale)),
                let tile = VerticalOCR.makeTile(gray, column: col) {
                 BenchOutput.save(tile.image, "tile-real")

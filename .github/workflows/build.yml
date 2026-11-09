@@ -21,7 +21,7 @@ jobs:
         run: swift test --package-path Packages/KotobaCore 2>&1 | tee test.log
       - name: Reading benchmark
         if: always()
-        run: grep -A 40 "^BENCH" test.log | grep -v "^Test Case" || true
+        run: grep -E "^(BENCH|  )" test.log || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
