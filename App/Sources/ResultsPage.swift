@@ -6,6 +6,8 @@ import KotobaCore
 enum ResultsPage {
     struct Options {
         var stylesheets: [String: String] = [:]
+        /// `stylesheets` already scoped (AppModel keeps it ready): skips redoing it on every redraw.
+        var dictionaryCSS: String?
         var indexStatus: String?
         var mined: Set<String> = []
         var canMine = false
@@ -41,9 +43,7 @@ enum ResultsPage {
         let a = o.appearance
         let bodyFont = FontCatalog.choice(a.bodyFont)
         let headFont = FontCatalog.choice(a.headwordFont)
-        let dictionaryCSS = o.stylesheets.map { title, css in
-            GlossaryHTML.scopedCSS(css, scope: "[data-dict=\"\(scopeID(title))\"]")
-        }.joined(separator: "\n")
+        let dictionaryCSS = o.dictionaryCSS ?? scopedCSS(o.stylesheets)
         let variables = """
         :root { --body-font: \(bodyFont.css), 'Hiragino Sans', sans-serif; --head-font: \(headFont.css), 'Hiragino Mincho ProN', serif;
                 --size: \(Int(a.fontSize))px; --leading: \(a.lineHeight); }
@@ -56,9 +56,21 @@ enum ResultsPage {
         <style>\(ThemePalette.css(for: a.theme))\(variables)\(baseCSS)</style>
         <style>\(dictionaryCSS)</style>
         <style>\(a.customCSS)</style>
-        </head><body>\(body)<script>\(tapScript)</script></body></html>
+        </head><body>\(bodyOpen)\(body)\(bodyClose)\(tapScript)</script></body></html>
         """
     }
+
+    /// Each dictionary's styles.css, limited to its own definitions.
+    static func scopedCSS(_ stylesheets: [String: String]) -> String {
+        stylesheets.sorted { $0.key < $1.key }.map { title, css in
+            GlossaryHTML.scopedCSS(css, scope: "[data-dict=\"\(scopeID(title))\"]")
+        }.joined(separator: "\n")
+    }
+
+    /// The results sit in this element, so a new search can replace just
+    /// them and keep the page (and its multi-megabyte fonts) loaded.
+    static let bodyOpen = "<main id=\"kotoba-results\">"
+    static let bodyClose = "</main><script>"
 
     private static func section(_ text: String) -> String {
         "<h2 class=\"section\">\(GlossaryHTML.escape(text))</h2>"

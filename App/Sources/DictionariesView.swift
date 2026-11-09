@@ -52,6 +52,8 @@ struct DictionariesView: View {
                     }
                     .onMove { model.move(from: $0, to: $1) }
                     .onDelete { offsets in offsets.map { model.dictionaries[$0] }.forEach(model.delete) }
+                    // The import is writing to the database: changes would wait for it.
+                    .disabled(model.isImporting)
                 } header: {
                     Text(tr("Ordine dei risultati"))
                 } footer: {
@@ -62,10 +64,10 @@ struct DictionariesView: View {
             .background(Palette.paper)
             .navigationTitle(tr("Dizionari"))
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { EditButton() }
+                ToolbarItem(placement: .topBarLeading) { EditButton().disabled(model.isImporting) }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { pickingFile = true } label: { Label(tr("Importa"), systemImage: "plus") }
-                        .disabled({ if case .running = model.importStatus { return true } else { return false } }())
+                        .disabled(model.isImporting)
                 }
             }
             .fileImporter(isPresented: $pickingFile, allowedContentTypes: [.zip]) { result in

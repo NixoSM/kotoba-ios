@@ -119,6 +119,7 @@ struct LensView: View {
                 try? await Task.sleep(for: .milliseconds(60))
                 guard !Task.isCancelled else { return }
                 var result = await model.search(pick.query)
+                guard !Task.isCancelled else { return }
                 guard !result.direct.isEmpty || frozen != nil else { return }
                 result.sentence = sentence.isEmpty ? pick.sentence : sentence
                 outcome = result

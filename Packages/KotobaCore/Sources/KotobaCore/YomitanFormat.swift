@@ -61,6 +61,12 @@ public enum YomitanParser {
     }
 
     public static func termBank(from data: Data, file: String = "term_bank") throws -> [TermEntry] {
+        try termBankWithIndexText(from: data, file: file).map(\.entry)
+    }
+
+    /// The entries plus the text reverse search indexes for each, worked out
+    /// from the glossary while it is parsed rather than by parsing it again.
+    public static func termBankWithIndexText(from data: Data, file: String = "term_bank") throws -> [(entry: TermEntry, indexText: String)] {
         let rows = try array(data, file: file)
         return try rows.enumerated().map { i, raw in
             guard let row = raw as? [Any], row.count >= 6,
@@ -68,9 +74,9 @@ public enum YomitanParser {
                   let reading = row[1] as? String else {
                 throw YomitanFormatError.badRow(file: file, row: i)
             }
-            let glossary = row[5]
-            let glossaryJSON = try JSONSerialization.data(withJSONObject: (glossary as? [Any]) ?? [glossary])
-            return TermEntry(
+            let glossary = (row[5] as? [Any]) ?? [row[5]]
+            let glossaryJSON = try JSONSerialization.data(withJSONObject: glossary)
+            let entry = TermEntry(
                 expression: expression,
                 reading: reading.isEmpty ? expression : reading,
                 definitionTags: tags(row[2]),
@@ -80,6 +86,7 @@ public enum YomitanParser {
                 sequence: row.count > 6 ? (row[6] as? NSNumber)?.intValue : nil,
                 termTags: row.count > 7 ? tags(row[7]) : []
             )
+            return (entry, ReverseSearch.indexText(fromGlossary: glossary))
         }
     }
 

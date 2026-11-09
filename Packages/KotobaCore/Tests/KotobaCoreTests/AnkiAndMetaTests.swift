@@ -82,3 +82,15 @@ final class AnkiAndMetaTests: XCTestCase {
         XCTAssertEqual(settings.appearance.glossaryLayoutMode, "compact-popup-anki")
     }
 }
+
+final class MalformedInputTests: XCTestCase {
+    func testEmptyPitchPatternIsSkippedNotACrash() {
+        let json: [String: Any] = ["reading": "はし", "pitches": [["position": ""], ["position": 1]]]
+        XCTAssertEqual(TermMetaParser.pitch(json, dictionary: "P")?.positions, [1])
+    }
+
+    func testNegativeYomitanProfileIndexUsesTheFirstProfile() throws {
+        let backup = #"{"profileCurrent":-1,"profiles":[{"name":"Main","options":{}}]}"#
+        XCTAssertEqual(try YomitanSettings.parse(Data(backup.utf8)).profileName, "Main")
+    }
+}

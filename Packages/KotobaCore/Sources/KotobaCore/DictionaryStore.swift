@@ -23,14 +23,17 @@ public enum DictionaryStoreError: Error, Equatable {
 public final class DictionaryStore: TermSource, @unchecked Sendable {
     private let db: SQLiteDatabase
     private let lock = NSLock()
+    private let path: String
 
     public static let schemaVersion = 5
 
     /// Pass `":memory:"` for a throwaway store (tests).
     public init(path: String) throws {
+        self.path = path
         db = try SQLiteDatabase(path: path)
         try db.execute("""
         PRAGMA journal_mode = WAL;
+        PRAGMA busy_timeout = 5000;
         PRAGMA synchronous = NORMAL;
         PRAGMA foreign_keys = ON;
         PRAGMA mmap_size = 268435456;
@@ -86,9 +89,17 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         return hira == source ? nil : hira
     }
 
+    /// All steps and the new version number commit together: an app killed
+    /// halfway would otherwise retry an ALTER TABLE that already happened,
+    /// fail on "duplicate column", and never open the dictionaries again.
     private func migrate() throws {
         var version = 0
         try db.prepare("PRAGMA user_version").rows { version = $0.int(0) }
+        guard version < Self.schemaVersion else { return }
+        try db.transaction { try migrate(from: version) }
+    }
+
+    private func migrate(from version: Int) throws {
         if version < 2 {
             // v2: full-text index of definitions for IT/EN → JP search.
             // Dictionaries imported before this get indexed later by buildMissingReverseIndexes.
@@ -221,12 +232,16 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         }
 
         public func add(_ terms: [TermEntry]) throws {
-            for t in terms {
+            try add(terms.map { (entry: $0, indexText: ReverseSearch.indexText(fromGlossaryJSON: $0.glossaryJSON)) })
+        }
+
+        /// Terms whose reverse-search text is already known (the importer works it out while parsing).
+        public func add(_ terms: [(entry: TermEntry, indexText: String)]) throws {
+            for (t, text) in terms {
                 try insertTerm.bind(dictID, t.expression, t.reading, Int(t.rules.rawValue), t.score,
                                     t.definitionTags.joined(separator: " "), t.termTags.joined(separator: " "),
                                     t.sequence, t.glossaryJSON,
                                     DictionaryStore.hiraganaReading(expression: t.expression, reading: t.reading)).run()
-                let text = ReverseSearch.indexText(fromGlossaryJSON: t.glossaryJSON)
                 if !text.isEmpty { try insertFTS.bind(db.lastInsertRowID, text).run() }
             }
             termCount += terms.count
@@ -247,27 +262,44 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     /// Installs a dictionary in a single transaction: if `body` throws,
     /// nothing is left behind.
     public func install(index: DictionaryIndex, styles: String = "", _ body: (ImportSession) throws -> Void) throws -> InstalledDictionary {
-        try locked {
-            frequencyDictionaryCache = nil
-            return try db.transaction {
-                var exists = false
-                try db.prepare("SELECT 1 FROM dictionaries WHERE title = ?1").bind(index.title).rows { _ in exists = true }
-                if exists { throw DictionaryStoreError.alreadyInstalled(title: index.title) }
-
-                var priority = 0
-                try db.prepare("SELECT COALESCE(MAX(priority) + 1, 0) FROM dictionaries").rows { priority = $0.int(0) }
-                let indexJSON = try JSONEncoder().encode(index)
-                try db.prepare("INSERT INTO dictionaries (title, revision, index_json, priority, styles) VALUES (?1, ?2, ?3, ?4, ?5)")
-                    .bind(index.title, index.revision, indexJSON, priority, styles).run()
-                let id = db.lastInsertRowID
-
-                let session = try ImportSession(db: db, dictID: id)
-                try body(session)
-                try db.prepare("UPDATE dictionaries SET term_count = ?1, meta_count = ?2, reverse_indexed = 1, kana_indexed = 1 WHERE id = ?3")
-                    .bind(session.termCount, session.metaCount, id).run()
-                return InstalledDictionary(id: id, title: index.title, revision: index.revision, priority: priority,
-                                           enabled: true, termCount: session.termCount, metaCount: session.metaCount)
+        // A file database gets its own connection for the import: the import
+        // holds one long write transaction (minutes, for JMdict), and on the
+        // shared connection it held the lock too, so every search and every
+        // tap in the dictionary list waited for it. Searches now keep reading
+        // the dictionaries as they were until the import commits.
+        guard path != ":memory:", !path.isEmpty else {
+            return try locked {
+                frequencyDictionaryCache = nil
+                return try Self.install(index: index, styles: styles, in: db, body)
             }
+        }
+        let importDB = try SQLiteDatabase(path: path)
+        try importDB.execute("PRAGMA busy_timeout = 10000; PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL; PRAGMA cache_size = -16000;")
+        let installed = try Self.install(index: index, styles: styles, in: importDB, body)
+        locked { frequencyDictionaryCache = nil }
+        return installed
+    }
+
+    private static func install(index: DictionaryIndex, styles: String, in db: SQLiteDatabase,
+                                _ body: (ImportSession) throws -> Void) throws -> InstalledDictionary {
+        try db.transaction {
+            var exists = false
+            try db.prepare("SELECT 1 FROM dictionaries WHERE title = ?1").bind(index.title).rows { _ in exists = true }
+            if exists { throw DictionaryStoreError.alreadyInstalled(title: index.title) }
+
+            var priority = 0
+            try db.prepare("SELECT COALESCE(MAX(priority) + 1, 0) FROM dictionaries").rows { priority = $0.int(0) }
+            let indexJSON = try JSONEncoder().encode(index)
+            try db.prepare("INSERT INTO dictionaries (title, revision, index_json, priority, styles) VALUES (?1, ?2, ?3, ?4, ?5)")
+                .bind(index.title, index.revision, indexJSON, priority, styles).run()
+            let id = db.lastInsertRowID
+
+            let session = try ImportSession(db: db, dictID: id)
+            try body(session)
+            try db.prepare("UPDATE dictionaries SET term_count = ?1, meta_count = ?2, reverse_indexed = 1, kana_indexed = 1 WHERE id = ?3")
+                .bind(session.termCount, session.metaCount, id).run()
+            return InstalledDictionary(id: id, title: index.title, revision: index.revision, priority: priority,
+                                       enabled: true, termCount: session.termCount, metaCount: session.metaCount)
         }
     }
 
@@ -370,12 +402,13 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
 
     public func reverseSearch(_ text: String, limit: Int = 60) -> [ReverseHit] {
         guard let match = ReverseSearch.ftsQuery(for: text) else { return [] }
+        let query = ReverseSearch.Query(text)
         // 1. Score the matching definitions using the index text alone.
         let scored: [(id: Int64, score: Int)] = locked {
             var out: [(id: Int64, score: Int)] = []
             try? cached("SELECT rowid, text FROM gloss_fts WHERE gloss_fts MATCH ?1 ORDER BY bm25(gloss_fts) LIMIT 2000")
                 .bind(match).rows { r in
-                    let score = ReverseSearch.score(query: text, indexText: r.string(1))
+                    let score = ReverseSearch.score(query, indexText: r.string(1))
                     if score > 0 { out.append((r.int64(0), score)) }
                 }
             return out

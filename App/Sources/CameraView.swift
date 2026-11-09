@@ -174,6 +174,7 @@ private struct PhotoView: View {
             try? await Task.sleep(for: .milliseconds(80))
             guard !Task.isCancelled else { return }
             var result = await model.search(text)
+            guard !Task.isCancelled else { return }
             result.sentence = sentence.isEmpty ? text : sentence
             outcome = result
             showingResults = !result.direct.isEmpty || !result.byMeaning.isEmpty || pick != nil

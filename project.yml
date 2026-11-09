@@ -68,11 +68,7 @@ targets:
       - App/Sources/ResultsPage.swift
       - App/Sources/ResultsPane.swift
       - App/Sources/ResultsWebView.swift
-      - App/Resources/Fonts/KleeOne-Regular.ttf
-      - App/Resources/Fonts/KleeOne-SemiBold.ttf
-      - App/Resources/Fonts/ShipporiMincho-Medium.ttf
-      - App/Resources/Fonts/ShipporiMincho-Bold.ttf
-      - App/Resources/Fonts/ZenMaruGothic-Medium.ttf
+    # No font files here: the panel reads the app's own copies (33 MB saved).
     dependencies:
       - package: KotobaCore
     info:
@@ -81,7 +77,6 @@ targets:
         CFBundleDisplayName: Kotoba
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
-        UIAppFonts: [KleeOne-Regular.ttf, KleeOne-SemiBold.ttf, ShipporiMincho-Medium.ttf, ShipporiMincho-Bold.ttf, ZenMaruGothic-Medium.ttf]
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).ShareViewController"

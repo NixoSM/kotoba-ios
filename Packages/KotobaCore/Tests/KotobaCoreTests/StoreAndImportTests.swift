@@ -85,6 +85,23 @@ final class StoreAndImportTests: XCTestCase {
         XCTAssertEqual(try store.dictionaries().map(\.title), ["B"])
     }
 
+    func testSearchesKeepWorkingDuringAnImport() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = try DictionaryStore(path: folder.appendingPathComponent("d.sqlite").path)
+        _ = try YomitanImporter.importDictionary(at: try makeZip(title: "A", files: jmdict), into: store)
+        var seenDuringImport: [String] = []
+        let index = DictionaryIndex(title: "B", revision: "1", format: 3)
+        _ = try store.install(index: index) { session in
+            try session.add(YomitanParser.termBank(from: Data(jmdict["term_bank_1.json"]!.utf8)))
+            // Before: the import held the store's lock, so this waited for the import (here: forever).
+            seenDuringImport = store.entries(matching: "猫").map(\.dictionary)
+        }
+        XCTAssertEqual(seenDuringImport, ["A"], "searches see the dictionaries as they were until the import commits")
+        XCTAssertEqual(store.entries(matching: "猫").map(\.dictionary), ["A", "B"])
+    }
+
     func testStructuredContentFlattening() {
         let json = #"[{"type":"structured-content","content":[{"tag":"ul","content":[{"tag":"li","content":"to eat"},{"tag":"li","content":["to ",{"tag":"ruby","content":["生",{"tag":"rt","content":"せい"}]},"live on"]}]}]}]"#
         XCTAssertEqual(GlossaryText.items(fromJSON: Data(json.utf8)), ["to eat\nto 生live on"])

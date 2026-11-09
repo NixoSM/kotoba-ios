@@ -33,6 +33,8 @@ final class AppModel {
     let store: DictionaryStore?
     let scanner = TextScanner()
 
+    var isImporting: Bool { if case .running = importStatus { true } else { false } }
+
     enum ImportStatus: Equatable {
         case running(title: String, fraction: Double)
         case finished(title: String, terms: Int)
@@ -59,7 +61,11 @@ final class AppModel {
         #endif
     }
 
-    private(set) var stylesheets: [String: String] = [:]
+    private(set) var stylesheets: [String: String] = [:] {
+        didSet { if stylesheets != oldValue { dictionaryCSS = ResultsPage.scopedCSS(stylesheets) } }
+    }
+    /// `stylesheets` rewritten for the results page, done once instead of on every redraw.
+    private(set) var dictionaryCSS = ""
 
     func refresh() {
         dictionaries = (try? store?.dictionaries()) ?? []

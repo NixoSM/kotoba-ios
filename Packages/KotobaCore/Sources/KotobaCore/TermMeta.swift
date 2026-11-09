@@ -50,7 +50,7 @@ public enum TermMetaParser {
         let positions = pitches.compactMap { p -> Int? in
             if let n = p["position"] as? NSNumber { return n.intValue }
             // Some dictionaries give an explicit H/L pattern instead: find the drop.
-            if let pattern = p["position"] as? String, pattern.allSatisfy({ $0 == "H" || $0 == "L" }) {
+            if let pattern = p["position"] as? String, !pattern.isEmpty, pattern.allSatisfy({ $0 == "H" || $0 == "L" }) {
                 let chars = Array(pattern)
                 if chars.first == "H" { return 1 }
                 for i in 1..<chars.count where chars[i] == "L" && chars[i - 1] == "H" { return i }

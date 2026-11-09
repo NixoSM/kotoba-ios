@@ -7,7 +7,12 @@ public enum GlossaryText {
     /// One string per glossary item.
     public static func items(fromJSON data: Data) -> [String] {
         guard let array = (try? JSONSerialization.jsonObject(with: data)) as? [Any] else { return [] }
-        return array.map { item in
+        return items(from: array)
+    }
+
+    /// Same, from a glossary that is already parsed (saves a parse per term on import).
+    public static func items(from array: [Any]) -> [String] {
+        array.map { item in
             var out = ""
             flatten(item, into: &out)
             return tidy(out)

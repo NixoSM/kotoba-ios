@@ -23,17 +23,58 @@ struct ResultsWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: WKWebView, context: Context) {
-        context.coordinator.onAction = onAction
-        guard context.coordinator.lastHTML != html else { return }
-        context.coordinator.lastHTML = html
-        view.loadHTMLString(html, baseURL: nil)
+        let c = context.coordinator
+        c.onAction = onAction
+        guard c.lastHTML != html else { return }
+        c.lastHTML = html
+        // Same page, new results: swap them in place. Reloading the page would
+        // make WebKit fetch and decode the fonts (up to 8 MB each) every search.
+        if let parts = Self.split(html), parts.shell == c.loadedShell,
+           let json = try? JSONSerialization.data(withJSONObject: parts.body, options: .fragmentsAllowed),
+           let literal = String(data: json, encoding: .utf8) {
+            let script = "(function(h){var m=document.getElementById('kotoba-results');if(!m)return false;m.innerHTML=h;window.scrollTo(0,0);return true;})(\(literal))"
+            view.evaluateJavaScript(script) { [weak view] result, _ in
+                guard (result as? Bool) != true, let view, c.lastHTML == html else { return }
+                c.load(html, in: view)
+            }
+            return
+        }
+        c.load(html, in: view)
+    }
+
+    /// The page without its results, and the results.
+    static func split(_ html: String) -> (shell: String, body: String)? {
+        guard let open = html.range(of: ResultsPage.bodyOpen),
+              let close = html.range(of: ResultsPage.bodyClose, options: .backwards),
+              open.upperBound <= close.lowerBound else { return nil }
+        return (String(html[..<open.upperBound]) + String(html[close.lowerBound...]),
+                String(html[open.upperBound..<close.lowerBound]))
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         var onAction: (URL) -> Void
         var lastHTML = ""
+        /// The page around the results that is on screen, once it has loaded.
+        var loadedShell: String?
+        private var loadingShell: String?
 
         init(onAction: @escaping (URL) -> Void) { self.onAction = onAction }
+
+        func load(_ html: String, in view: WKWebView) {
+            loadedShell = nil
+            loadingShell = ResultsWebView.split(html)?.shell
+            view.loadHTMLString(html, baseURL: nil)
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            loadedShell = loadingShell
+        }
+
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            // iOS reclaimed the page's memory: draw it again instead of staying blank.
+            loadedShell = nil
+            load(lastHTML, in: webView)
+        }
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -75,7 +116,8 @@ final class MediaSchemeHandler: NSObject, WKURLSchemeHandler {
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         if let url = task.request.url, url.host == "font" {
             let file = url.lastPathComponent
-            guard let fileURL = FontCatalog.fileURL(file), let data = try? Data(contentsOf: fileURL) else {
+            // Mapped, not copied: the file stays on disk and only the pages WebKit reads come in.
+            guard let fileURL = FontCatalog.fileURL(file), let data = try? Data(contentsOf: fileURL, options: .mappedIfSafe) else {
                 task.didFailWithError(URLError(.fileDoesNotExist))
                 return
             }
