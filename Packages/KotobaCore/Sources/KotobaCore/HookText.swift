@@ -2,18 +2,31 @@ import Foundation
 
 /// Text that arrives from a texthooker (Textractor and friends) on the PC.
 public enum HookText {
-    /// The line inside one WebSocket message. Like texthooker-ui: a JSON object
-    /// with a "sentence" field (TextractorSender, some LunaTranslator setups),
-    /// otherwise the message is the line itself (kuroahna's textractor_websocket).
-    public static func message(_ raw: String) -> String {
+    /// One WebSocket message: the line, and where it sits in the PC's history
+    /// when the server keeps one (Kotoba's own Textractor extension).
+    public struct Message: Equatable, Sendable {
+        public var text: String
+        /// Position in this Textractor run, counting from 1.
+        public var id: Int?
+        /// Changes every time Textractor starts.
+        public var session: String?
+    }
+
+    /// Like texthooker-ui: a JSON object with a "sentence" field (TextractorSender,
+    /// Kotoba's extension, some LunaTranslator setups), otherwise the message is
+    /// the line itself (kuroahna's textractor_websocket).
+    public static func parse(_ raw: String) -> Message {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasPrefix("{"), let data = trimmed.data(using: .utf8),
            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let sentence = object["sentence"] as? String {
-            return sentence
+            return Message(text: sentence, id: (object["id"] as? NSNumber)?.intValue, session: object["session"] as? String)
         }
-        return raw
+        return Message(text: raw)
     }
+
+    /// The line inside one WebSocket message.
+    public static func message(_ raw: String) -> String { parse(raw).text }
 
     /// A find → replace the person adds themselves (a regular expression).
     public struct Replacement: Codable, Equatable, Hashable, Sendable, Identifiable {

@@ -34,9 +34,12 @@ struct HookAddress: Equatable {
         self.port = port
     }
 
-    var url: URL? {
+    var url: URL? { url(query: "") }
+
+    /// With a query, e.g. "kotoba=1&session=…&since=…" (other servers ignore it).
+    func url(query: String) -> URL? {
         let h = host.contains(":") ? "[\(host)]" : host
-        return URL(string: "ws://\(h):\(port)")
+        return URL(string: "ws://\(h):\(port)/" + (query.isEmpty ? "" : "?" + query))
     }
 }
 
@@ -66,6 +69,8 @@ final class HookSocket {
 
     var onState: (State) -> Void = { _ in }
     var onText: (String) -> Void = { _ in }
+    /// Asked at every connection: tells Kotoba's extension which lines we already have.
+    var resumeQuery: () -> String = { "" }
 
     private(set) var state = State.off { didSet { if state != oldValue { onState(state) } } }
     private var connection: NWConnection?
@@ -106,7 +111,7 @@ final class HookSocket {
     }
 
     private func connect() {
-        guard let address, let url = address.url else { return }
+        guard let address, let url = address.url(query: resumeQuery()) else { return }
         generation += 1
         let current = generation
         let tcp = NWProtocolTCP.Options()

@@ -46,7 +46,7 @@ struct HookerSetupView: View {
                             Text(tr("Non ho trovato Textractor sulla Wi-Fi. Fai avanzare una riga nel gioco (l'estensione si accende con la prima riga) e riprova, oppure scrivi l'indirizzo a mano."))
                                 .foregroundStyle(Palette.shu)
                         }
-                        Text(tr("Sul PC serve Textractor con l'estensione textractor_websocket (porta 6677). Telefono e PC devono essere sulla stessa Wi-Fi. La guida passo passo è qui sotto."))
+                        Text(tr("Sul PC serve Textractor con l'estensione di Kotoba (o textractor_websocket), porta 6677. Quella di Kotoba tiene le righe arrivate mentre il telefono dorme. Telefono e PC devono essere sulla stessa rete di casa. La guida passo passo è qui sotto."))
                     }
                 }
 
@@ -162,7 +162,7 @@ struct HookerSetupView: View {
 
     static var steps: [String] { [
         tr("Scarica Textractor da github.com/Artikash/Textractor (Releases › Textractor-5.2.0-Zip-Version-English-Only.zip) ed estrailo: dentro ci sono le cartelle x86 e x64."),
-        tr("Scarica textractor_websocket_x86.zip e textractor_websocket_x64.zip da github.com/kuroahna/textractor_websocket (Releases). Metti ogni .dll nella cartella x86 o x64 di Textractor."),
+        tr("Scarica l'estensione di Kotoba: su GitHub › Actions › l'ultima Build verde › Kotoba-Textractor. Metti kotoba_websocket_x86.dll nella cartella x86 di Textractor e kotoba_websocket_x64.dll in x64."),
         tr("Apri Textractor › Extensions › tasto destro › Add extension › scegli «*.dll» in basso › seleziona la .dll. Fallo sia in x86 sia in x64."),
         tr("Avvia il gioco, agganciati con Textractor e scegli la riga giusta nel menu in alto. Alla prima riga Windows chiede il permesso del firewall: spunta «Reti private» e consenti."),
         tr("Qui tocca «Trova il PC sulla Wi-Fi» (o scrivi l'indirizzo IPv4 che vedi con il comando ipconfig) e accendi «Ricevi dal PC»."),

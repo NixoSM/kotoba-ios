@@ -3,9 +3,15 @@
 Giochi sul PC, il testo di ogni riquadro appare sull'iPhone nella scheda **Dal PC**,
 e tocchi una parola per cercarla (con mining su Anki, la frase è la riga del gioco).
 
-Come funziona: **Textractor** sul PC aggancia il testo del gioco. L'estensione
-**textractor_websocket** lo trasmette sulla rete di casa (porta 6677), come fa per
-siti come kizuna-texthooker-ui. Kotoba si collega a quella porta.
+Come funziona: **Textractor** sul PC aggancia il testo del gioco. Un'estensione
+lo trasmette sulla rete di casa (porta 6677), come fa per siti come
+kizuna-texthooker-ui. Kotoba si collega a quella porta.
+
+Consigliata: **l'estensione di Kotoba** (`tools/textractor-extension`). Tiene le
+ultime 2000 righe: quando l'iPhone si spegne e lo riaccendi, Kotoba riceve tutte
+le righe che si è perso, senza doppioni. Non serve tenere lo schermo acceso.
+Funziona anche con kizuna-texthooker-ui (riceve solo le righe nuove, come prima).
+Va bene anche textractor_websocket di kuroahna, ma senza recupero delle righe.
 
 ## Preparare il PC (una volta sola)
 
@@ -13,15 +19,15 @@ siti come kizuna-texthooker-ui. Kotoba si collega a quella porta.
    <https://github.com/Artikash/Textractor/releases> ed estrailo dove vuoi
    (per esempio in `Documenti`). Dentro ci sono due cartelle, `x86` e `x64`:
    si usa `x86` per i giochi a 32 bit (quasi tutte le VN) e `x64` per quelli a 64 bit.
-2. **L'estensione.** Scarica
-   [textractor_websocket_x86.zip](https://github.com/kuroahna/textractor_websocket/releases/latest/download/textractor_websocket_x86.zip) e
-   [textractor_websocket_x64.zip](https://github.com/kuroahna/textractor_websocket/releases/latest/download/textractor_websocket_x64.zip).
-   Estrai `textractor_websocket_x86.dll` nella cartella `Textractor\x86` e
-   `textractor_websocket_x64.dll` in `Textractor\x64`.
+2. **L'estensione.** Su GitHub › **Actions** › l'ultima *Build* verde › scarica
+   **Kotoba-Textractor**. Metti `kotoba_websocket_x86.dll` nella cartella
+   `Textractor\x86` e `kotoba_websocket_x64.dll` in `Textractor\x64`.
 3. **Attivala.** Apri `Textractor\x86\Textractor.exe` › pulsante **Extensions** ›
    tasto destro dentro la finestra › **Add extension** › in basso a destra cambia
-   il tipo di file da `*.xdll` a `*.dll` › scegli `textractor_websocket_x86.dll`.
-   Ripeti con `Textractor\x64\Textractor.exe` e la dll x64.
+   il tipo di file da `*.xdll` a `*.dll` › scegli `kotoba_websocket_x86.dll`.
+   Ripeti con `Textractor\x64\Textractor.exe` e la dll x64. Se c'era già
+   un'altra estensione WebSocket sulla porta 6677, toglila (tasto destro › Remove):
+   due server sulla stessa porta non possono stare insieme.
 
 ## Ogni volta che giochi
 
@@ -38,8 +44,9 @@ siti come kizuna-texthooker-ui. Kotoba si collega a quella porta.
    scrivi `ipconfig` e copia l'**Indirizzo IPv4** (es. `192.168.1.20`).
 5. Accendi **Ricevi dal PC**. La pillola diventa **In diretta dal PC**.
 
-Nota: l'estensione accende il suo server solo dopo la **prima riga** agganciata.
-Prima di allora Kotoba scrive "Aspetto Textractor…" e riprova da sola.
+Nota: l'estensione di Kotoba si accende con Textractor; quella di kuroahna solo
+dopo la **prima riga** agganciata (prima di allora Kotoba scrive "Aspetto
+Textractor…" e riprova da sola).
 
 ## Usare la scheda Dal PC
 
@@ -52,8 +59,9 @@ Prima di allora Kotoba scrive "Aspetto Textractor…" e riprova da sola.
 - Le righe restano salvate anche se chiudi l'app (le ultime 1000).
 - Con lo schermo acceso nella scheda, l'iPhone non si spegne mentre giochi
   (si può disattivare).
-- Kotoba deve essere **aperta**: iOS ferma la rete delle app in sottofondo. Quando
-  torni su Kotoba si ricollega da sola; le righe arrivate nel frattempo non ci sono.
+- iOS ferma la rete delle app in sottofondo e con lo schermo spento. Quando torni
+  su Kotoba si ricollega da sola e, con l'estensione di Kotoba, recupera le righe
+  arrivate nel frattempo. Con altre estensioni quelle righe si perdono.
 
 ### Pulizia automatica (Collegamento e pulizia)
 
@@ -109,6 +117,10 @@ righe a mano (utile per provare che telefono e PC si vedono).
   programma compatibile con texthooker-ui/kizuna, anche su un'altra porta
   (`192.168.1.20:9001`).
 - textractor_websocket ascolta su `0.0.0.0:6677` e manda solo il thread scelto in Textractor.
+- L'estensione di Kotoba fa lo stesso, e in più: un client che si collega a
+  `/?kotoba=1&session=S&since=N` riceve in JSON (`{"sentence","id","session"}`)
+  le righe dopo la N; se S non è la sessione attuale (Textractor riavviato) le
+  riceve tutte. Codice e test in `tools/textractor-extension/`.
 - Il piano B è un piccolo server HTTP sull'iPhone (porta 6678): `POST /text` con il
   testo in UTF-8; `GET /` dà la pagina per incollare.
 - Codice: `App/Sources/Texthooker/`, pulizia del testo in

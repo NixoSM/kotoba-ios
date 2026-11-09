@@ -7,3 +7,5 @@ Payload/
 App/Info.plist
 __pycache__/
 *.pyc
+tools/textractor-extension/out/
+tools/textractor-extension/test_server
