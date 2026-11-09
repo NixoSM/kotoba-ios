@@ -172,8 +172,11 @@ enum FontCatalog {
     }
     #endif
 
+    /// Called on every redraw of the results: lists the Fonts folder only for fonts you added.
     static func choice(_ id: String) -> FontChoice {
-        all().first { $0.id == id } ?? builtIn[1]
+        let fonts = builtIn
+        if let found = fonts.first(where: { $0.id == id }) { return found }
+        return (id.hasPrefix("file:") ? custom().first { $0.id == id } : nil) ?? fonts[1]
     }
 
     /// Copies a font file into the app and returns its id.

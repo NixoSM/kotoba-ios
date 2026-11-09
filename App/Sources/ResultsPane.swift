@@ -19,7 +19,7 @@ struct ResultsPane: View {
 
     var body: some View {
         ResultsWebView(html: ResultsPage.html(outcome: outcome, query: query, options: ResultsPage.Options(
-            stylesheets: model.stylesheets, indexStatus: indexStatus, mined: model.settings.mined,
+            dictionaryCSS: model.dictionaryCSS, indexStatus: indexStatus, mined: model.settings.mined,
             canMine: model.settings.ankiFormat != nil, collapsed: model.settings.collapsedDictionaries,
             appearance: model.settings.appearance)),
                        onAction: handle)
