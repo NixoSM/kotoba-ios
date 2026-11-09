@@ -272,6 +272,12 @@ enum L10n {
              "赤い点を単語の最初の文字に合わせてください。⏸ で画面を止めると、単語をタップしたり、縦書きは「選択」で選べます。"),
         "Tocca una parola. Per il testo verticale usa Seleziona.":
             ("Tap a word. For vertical text use Select.", "単語をタップしてください。縦書きは「選択」を使ってください。"),
+        "縦: punta il punto rosso sul primo carattere della parola, tenendo le colonne dritte.":
+            ("縦: put the red dot on the first character of the word, keeping the columns straight.", "縦：赤い点を単語の最初の文字に合わせ、行をまっすぐに保ってください。"),
+        "Metti il punto rosso sul primo carattere della parola. Per i libri in verticale scegli 縦 in alto.":
+            ("Put the red dot on the first character of the word. For vertical books choose 縦 at the top.", "赤い点を単語の最初の文字に合わせてください。縦書きの本は上の「縦」を選んでください。"),
+        "Tocca una parola. Per il testo verticale usa Seleziona: tieni premuto sulla parola.":
+            ("Tap a word. For vertical text use Select: press and hold the word.", "単語をタップしてください。縦書きは「選択」で単語を長押ししてください。"),
         // Grammar
         "negativo": ("negative", "否定"),
         "passato": ("past", "過去"),

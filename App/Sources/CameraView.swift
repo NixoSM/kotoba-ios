@@ -77,7 +77,7 @@ private struct PhotoView: View {
     var body: some View {
         Group {
             if let image {
-                PhotoReader(image: image, selecting: selecting,
+                PhotoReader(image: image, selecting: selecting, onMiss: { selecting = true },
                             highlightLength: outcome.direct.first?.matchedText.count ?? 0) { text, line in
                     query = text
                     sentence = line
@@ -233,6 +233,8 @@ struct PhotoReader: UIViewRepresentable {
     var selecting: Bool
     /// How many characters the first result matched, to highlight them.
     var highlightLength: Int
+    /// A tap found no text there (often vertical text, which only Live Text reads).
+    var onMiss: (() -> Void)? = nil
     /// Text from the tapped character on, and its whole line (the Anki sentence).
     let onPick: (String, String) -> Void
 
@@ -268,6 +270,7 @@ struct PhotoReader: UIViewRepresentable {
     func updateUIView(_ scroll: UIScrollView, context: Context) {
         let c = context.coordinator
         c.onPick = onPick
+        c.onMiss = onMiss
         c.show(image)
         c.setSelecting(selecting)
         if c.highlightLength != highlightLength {
@@ -287,6 +290,7 @@ struct PhotoReader: UIViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, UIScrollViewDelegate, ImageAnalysisInteractionDelegate {
         var onPick: (String, String) -> Void
+        var onMiss: (() -> Void)?
         let interaction = ImageAnalysisInteraction()
         let analyzer = ImageAnalyzer()
         weak var imageView: UIImageView?
@@ -427,7 +431,11 @@ struct PhotoReader: UIViewRepresentable {
                     if distance < (best?.distance ?? 14) { best = (l, i, distance) }
                 }
             }
-            guard let best else { return }
+            guard let best else {
+                // No horizontal text here but Live Text sees some: switch to selection.
+                if interaction.analysisHasText(at: gesture.location(in: imageView)) { onMiss?() }
+                return
+            }
             tappedAt = (best.line, best.index)
             highlightLength = 1
             redraw()
@@ -474,6 +482,8 @@ private struct LensView: View {
     @State private var frozen: UIImage?
     @State private var selecting = false
     @State private var cameraAllowed: Bool?
+    /// 縦: vertical text, read with Live Text's scanner instead of Vision.
+    @AppStorage("lensVertical") private var vertical = false
 
     var body: some View {
         if cameraAllowed == false {
@@ -483,7 +493,7 @@ private struct LensView: View {
             VStack(spacing: 0) {
                 ZStack {
                     if let frozen {
-                        PhotoReader(image: frozen, selecting: selecting, highlightLength: matched) { text, line in
+                        PhotoReader(image: frozen, selecting: selecting, highlightLength: matched, onMiss: { selecting = true }) { text, line in
                             query = text
                             sentence = line
                         }
@@ -499,11 +509,33 @@ private struct LensView: View {
                             .padding(.top, 8)
                         }
                     } else if cameraAllowed == true {
-                        LiveReader(controller: lens, highlightLength: matched) { text, line in
-                            query = text
-                            sentence = line
+                        if vertical && VerticalScanner.available {
+                            VerticalScanner(controller: lens, highlightLength: matched) { text, line in
+                                query = text
+                                sentence = line
+                            }
+                        } else {
+                            LiveReader(controller: lens, highlightLength: matched) { text, line in
+                                query = text
+                                sentence = line
+                            }
                         }
                         Reticle()
+                        VStack {
+                            HStack {
+                                Picker("", selection: $vertical) {
+                                    Text("横").tag(false)
+                                    Text("縦").tag(true)
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(width: 96)
+                                .padding(5)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .padding(10)
+                                Spacer()
+                            }
+                            Spacer()
+                        }
                     } else {
                         Color.black
                     }
@@ -526,8 +558,10 @@ private struct LensView: View {
                 Group {
                     if outcome.direct.isEmpty && outcome.byMeaning.isEmpty {
                         Text(frozen == nil
-                             ? tr("Metti il punto rosso sul primo carattere della parola. Con ⏸ fermi l'immagine: poi tocchi le parole, o usi Seleziona per il testo verticale.")
-                             : tr("Tocca una parola. Per il testo verticale usa Seleziona."))
+                             ? (vertical
+                                ? tr("縦: punta il punto rosso sul primo carattere della parola, tenendo le colonne dritte.")
+                                : tr("Metti il punto rosso sul primo carattere della parola. Per i libri in verticale scegli 縦 in alto."))
+                             : tr("Tocca una parola. Per il testo verticale usa Seleziona: tieni premuto sulla parola."))
                             .font(.subheadline)
                             .foregroundStyle(Palette.muted)
                             .multilineTextAlignment(.center)
@@ -569,9 +603,14 @@ private struct LensView: View {
             frozen = nil
             selecting = false
             lens.start()
-        } else if let still = lens.snapshot() {
-            lens.stop()
-            frozen = still
+        } else {
+            Task {
+                guard let still = await lens.snapshot() else { return }
+                lens.stop()
+                frozen = still
+                // Vision can't tap vertical text: start in Live Text selection.
+                selecting = vertical
+            }
         }
     }
 }
@@ -594,15 +633,177 @@ private struct Reticle: View {
 @MainActor
 final class LensController {
     fileprivate weak var view: LiveReaderView?
-    private var wantsRunning = false
+    fileprivate weak var scanner: DataScannerViewController?
+    private(set) var wantsRunning = false
 
-    func start() { wantsRunning = true; view?.start() }
-    func stop() { wantsRunning = false; view?.stop() }
-    func snapshot() -> UIImage? { view?.snapshot() }
+    func start() {
+        wantsRunning = true
+        view?.start()
+        if let scanner, !scanner.isScanning { try? scanner.startScanning() }
+    }
+
+    func stop() {
+        wantsRunning = false
+        view?.stop()
+        scanner?.stopScanning()
+    }
+
+    func snapshot() async -> UIImage? {
+        if let scanner, scanner.isScanning { return try? await scanner.capturePhoto() }
+        return view?.snapshot()
+    }
 
     fileprivate func attach(_ view: LiveReaderView) {
         self.view = view
+        self.scanner = nil
         if wantsRunning { view.start() }
+    }
+
+    fileprivate func attach(_ scanner: DataScannerViewController) {
+        self.scanner = scanner
+        self.view = nil
+    }
+}
+
+/// Vertical text, live. Apple's Live Text scanner reads 縦書き but only gives a
+/// box per block of text, with its columns as lines. Typeset text sits on a
+/// grid, so the column under the dot is (right edge − x) / column width and
+/// the character is (y − top) / character height, with the character height
+/// taken from the longest column.
+private struct VerticalScanner: UIViewControllerRepresentable {
+    static var available: Bool {
+        DataScannerViewController.isSupported
+            && DataScannerViewController.supportedTextRecognitionLanguages.contains { $0.hasPrefix("ja") }
+    }
+
+    let controller: LensController
+    var highlightLength: Int
+    let onRead: (String, String) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onRead: onRead) }
+
+    func makeUIViewController(context: Context) -> DataScannerViewController {
+        let scanner = DataScannerViewController(recognizedDataTypes: [.text(languages: ["ja-JP"])],
+                                                qualityLevel: .accurate,
+                                                recognizesMultipleItems: true,
+                                                isHighFrameRateTrackingEnabled: true,
+                                                isPinchToZoomEnabled: true,
+                                                isGuidanceEnabled: false,
+                                                isHighlightingEnabled: false)
+        scanner.delegate = context.coordinator
+        context.coordinator.attach(to: scanner)
+        controller.attach(scanner)
+        return scanner
+    }
+
+    func updateUIViewController(_ scanner: DataScannerViewController, context: Context) {
+        context.coordinator.onRead = onRead
+        context.coordinator.setHighlightLength(highlightLength)
+        if controller.wantsRunning, !scanner.isScanning { try? scanner.startScanning() }
+    }
+
+    static func dismantleUIViewController(_ scanner: DataScannerViewController, coordinator: Coordinator) {
+        scanner.stopScanning()
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, DataScannerViewControllerDelegate {
+        var onRead: (String, String) -> Void
+        private var last = ""
+        private let outline = CAShapeLayer()
+        private let marked = CAShapeLayer()
+        /// The current cell: its rect and the pitch to extend it down the column.
+        private var cell: CGRect?
+        private var highlightLength = 1
+
+        init(onRead: @escaping (String, String) -> Void) {
+            self.onRead = onRead
+            super.init()
+            outline.fillColor = UIColor.clear.cgColor
+            outline.strokeColor = UIColor.white.withAlphaComponent(0.45).cgColor
+            outline.lineWidth = 1
+            outline.lineDashPattern = [3, 3]
+            marked.fillColor = UIColor(Palette.shu).withAlphaComponent(0.3).cgColor
+            marked.strokeColor = UIColor(Palette.shu).cgColor
+            marked.lineWidth = 2
+        }
+
+        func attach(to scanner: DataScannerViewController) {
+            scanner.overlayContainerView.layer.addSublayer(outline)
+            scanner.overlayContainerView.layer.addSublayer(marked)
+        }
+
+        func setHighlightLength(_ length: Int) {
+            guard length != highlightLength else { return }
+            highlightLength = length
+            drawMarked()
+        }
+
+        func dataScanner(_ dataScanner: DataScannerViewController, didAdd addedItems: [RecognizedItem], allItems: [RecognizedItem]) {
+            pick(in: dataScanner, items: allItems)
+        }
+
+        func dataScanner(_ dataScanner: DataScannerViewController, didUpdate updatedItems: [RecognizedItem], allItems: [RecognizedItem]) {
+            pick(in: dataScanner, items: allItems)
+        }
+
+        func dataScanner(_ dataScanner: DataScannerViewController, didRemove removedItems: [RecognizedItem], allItems: [RecognizedItem]) {
+            pick(in: dataScanner, items: allItems)
+        }
+
+        private func pick(in scanner: DataScannerViewController, items: [RecognizedItem]) {
+            let c = CGPoint(x: scanner.view.bounds.midX, y: scanner.view.bounds.midY)
+            let blocks: [(rect: CGRect, columns: [[Character]])] = items.compactMap { item in
+                guard case .text(let text) = item else { return nil }
+                let q = item.bounds
+                let xs = [q.topLeft.x, q.topRight.x, q.bottomLeft.x, q.bottomRight.x]
+                let ys = [q.topLeft.y, q.topRight.y, q.bottomLeft.y, q.bottomRight.y]
+                let rect = CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+                let columns = text.transcript.split(separator: "\n").map { Array($0.filter { !$0.isWhitespace }) }.filter { !$0.isEmpty }
+                return columns.isEmpty ? nil : (rect, columns)
+            }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            let path = UIBezierPath()
+            for block in blocks { path.append(UIBezierPath(roundedRect: block.rect.insetBy(dx: -3, dy: -3), cornerRadius: 4)) }
+            outline.frame = scanner.overlayContainerView.bounds
+            marked.frame = scanner.overlayContainerView.bounds
+            outline.path = path.cgPath
+            CATransaction.commit()
+
+            guard let block = blocks.first(where: { $0.rect.insetBy(dx: -6, dy: -6).contains(c) }) else {
+                cell = nil
+                drawMarked()
+                return
+            }
+            let columnWidth = block.rect.width / CGFloat(block.columns.count)
+            let longest = block.columns.map(\.count).max() ?? 1
+            let charHeight = block.rect.height / CGFloat(longest)
+            let column = min(block.columns.count - 1, max(0, Int((block.rect.maxX - c.x) / columnWidth)))
+            let chars = block.columns[column]
+            let row = min(chars.count - 1, max(0, Int((c.y - block.rect.minY) / charHeight)))
+            cell = CGRect(x: block.rect.maxX - CGFloat(column + 1) * columnWidth, y: block.rect.minY + CGFloat(row) * charHeight,
+                          width: columnWidth, height: charHeight)
+            let query = String(chars[row...].prefix(20))
+            if query != last {
+                last = query
+                highlightLength = 1
+                onRead(query, String(chars))
+            }
+            drawMarked()
+        }
+
+        private func drawMarked() {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            if let cell {
+                let rect = CGRect(x: cell.minX, y: cell.minY, width: cell.width, height: cell.height * CGFloat(max(1, highlightLength)))
+                marked.path = UIBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), cornerRadius: 3).cgPath
+            } else {
+                marked.path = nil
+            }
+            CATransaction.commit()
+        }
     }
 }
 
