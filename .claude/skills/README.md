@@ -2,16 +2,14 @@
 
 Third-party Claude skills vetted for Kotoba. Each folder is the upstream `skills/<name>/`
 directory, unchanged, plus its `LICENSE`, `NOTICE` and the upstream commit it was copied
-from (`.upstream-commit`). All three are by Terry Nyberg / Coffee & Code LLC, Apache-2.0.
+from (`.upstream-commit`). Both are by Terry Nyberg / Coffee & Code LLC, Apache-2.0.
 
 | Skill | Upstream | When it runs |
 |---|---|---|
 | `bug-echo` | https://github.com/Terryc21/bug-echo | After a bug fix: find other places with the same defect |
 | `bug-prospector` | https://github.com/Terryc21/bug-prospector | Before a release or after a big feature: hunt for bugs that haven't fired yet |
-| `tutorial-creator` | https://github.com/Terryc21/tutorial-creator | Only on request: annotated lessons from Kotoba's own code |
 
-Left out on purpose: `bug-echo/agents/` (Codex config), `tutorial-creator/examples/`
-(sample output, including a PDF), and the Python/TypeScript/Rust progressions.
+Left out on purpose: `bug-echo/agents/` (Codex config).
 
 ## How these skills must adapt to this project
 
@@ -32,11 +30,6 @@ Kotoba is different, and these notes override the skills where they conflict.
   and attach a copy in the thread. Don't commit reports to `main` unless asked.
 - **Commits:** follow the repo's normal commit rules and attribution. The `bug-echo:`
   subject prefix is fine to keep.
-- **tutorial-creator:** run it only when asked. Its config and progress live in
-  `.claude/tutorial-config.yaml` and `tutorials/`; commit them, because cloud sessions
-  lose anything not in git (the `~/.claude/tutorial-creator/registry.yaml` it offers to
-  write does not survive). The Anki/PDF flashcard export installs `genanki`, `mistune` or
-  `reportlab` from PyPI; ask first.
 
 ## Updating
 
