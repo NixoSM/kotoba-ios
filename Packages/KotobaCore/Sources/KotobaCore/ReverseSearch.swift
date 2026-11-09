@@ -11,6 +11,10 @@ public enum ReverseSearch {
         segments(of: GlossaryText.items(fromJSON: data)).joined(separator: "\n")
     }
 
+    public static func indexText(fromGlossary glossary: [Any]) -> String {
+        segments(of: GlossaryText.items(from: glossary)).joined(separator: "\n")
+    }
+
     static func segments(of items: [String]) -> [String] {
         var out: [String] = []
         for item in items {

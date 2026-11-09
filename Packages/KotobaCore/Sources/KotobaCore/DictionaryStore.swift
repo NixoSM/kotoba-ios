@@ -229,12 +229,16 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         }
 
         public func add(_ terms: [TermEntry]) throws {
-            for t in terms {
+            try add(terms.map { (entry: $0, indexText: ReverseSearch.indexText(fromGlossaryJSON: $0.glossaryJSON)) })
+        }
+
+        /// Terms whose reverse-search text is already known (the importer works it out while parsing).
+        public func add(_ terms: [(entry: TermEntry, indexText: String)]) throws {
+            for (t, text) in terms {
                 try insertTerm.bind(dictID, t.expression, t.reading, Int(t.rules.rawValue), t.score,
                                     t.definitionTags.joined(separator: " "), t.termTags.joined(separator: " "),
                                     t.sequence, t.glossaryJSON,
                                     DictionaryStore.hiraganaReading(expression: t.expression, reading: t.reading)).run()
-                let text = ReverseSearch.indexText(fromGlossaryJSON: t.glossaryJSON)
                 if !text.isEmpty { try insertFTS.bind(db.lastInsertRowID, text).run() }
             }
             termCount += terms.count

@@ -50,7 +50,7 @@ public enum YomitanImporter {
                 // Parse and insert one bank at a time, then drop it, to keep memory flat.
                 try autoreleasepoolIfAvailable {
                     if isBank(path, prefix: "term_bank_") {
-                        try session.add(YomitanParser.termBank(from: data, file: path))
+                        try session.add(YomitanParser.termBankWithIndexText(from: data, file: path))
                     } else {
                         try session.add(YomitanParser.termMetaBank(from: data, file: path))
                     }
