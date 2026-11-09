@@ -24,7 +24,7 @@ final class AppModel {
     }
     /// Set from outside (kotoba://search?q=…, camera) to run a search.
     var pendingQuery: String?
-    /// The tab on screen: 0 search, 1 camera, 2 dictionaries, 3 settings.
+    /// The tab on screen: 0 search, 1 camera, 4 from PC, 2 dictionaries, 3 settings.
     var selectedTab = 0
     /// What the camera tab should open with.
     enum CameraRequest: Equatable { case lens, screenshot(String) }

@@ -6,6 +6,11 @@ mining su Anki e fotocamera con OCR.
 
 Stato: **0.4** — dizionari Yomitan, de-coniugazione, romaji, ricerca per significato, frequenze e accento, import delle impostazioni Yomitan, mining su AnkiMobile, fotocamera con Live Text.
 
+## Visual novel sul PC
+
+La scheda **Dal PC** mostra in diretta il testo che Textractor aggancia dal gioco:
+tocchi una parola e la cerchi. Come prepararlo: [docs/texthooker.md](docs/texthooker.md).
+
 ## Struttura
 
 - `Packages/KotobaCore` — il motore (formato Yomitan, de-coniugazione, scansione del testo). Swift puro, con test.

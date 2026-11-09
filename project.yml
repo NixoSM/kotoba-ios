@@ -38,6 +38,7 @@ targets:
         # Italian here; English and Japanese in App/Resources/*.lproj/InfoPlist.strings.
         NSCameraUsageDescription: "Kotoba usa la fotocamera per leggere il testo giapponese e cercarlo nel dizionario."
         NSPhotoLibraryUsageDescription: "Kotoba legge il testo giapponese dalle immagini che scegli."
+        NSLocalNetworkUsageDescription: "Kotoba riceve dal tuo PC il testo del gioco che stai leggendo (Textractor) sulla stessa Wi-Fi."
         UIFileSharingEnabled: true
         UIAppFonts: [KleeOne-Regular.ttf, KleeOne-SemiBold.ttf, ShipporiMincho-Medium.ttf, ShipporiMincho-Bold.ttf, ZenMaruGothic-Medium.ttf]
         LSSupportsOpeningDocumentsInPlace: true
@@ -46,8 +47,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.nixosm.kotoba
         CODE_SIGN_ENTITLEMENTS: Entitlements/Kotoba.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        MARKETING_VERSION: "0.14.0"
-        CURRENT_PROJECT_VERSION: "14"
+        MARKETING_VERSION: "0.15.0"
+        CURRENT_PROJECT_VERSION: "15"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.0"
   # "Kotoba" in the Share sheet: select text anywhere → Share → Kotoba.
@@ -89,8 +90,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.nixosm.kotoba.share
         CODE_SIGN_ENTITLEMENTS: Entitlements/KotobaShare.entitlements
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) KOTOBA_EXTENSION"
-        MARKETING_VERSION: "0.14.0"
-        CURRENT_PROJECT_VERSION: "14"
+        MARKETING_VERSION: "0.15.0"
+        CURRENT_PROJECT_VERSION: "15"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.0"
   # Control Center and Lock Screen buttons (iOS 18+).
@@ -116,7 +117,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nixosm.kotoba.widgets
         CODE_SIGN_ENTITLEMENTS: Entitlements/KotobaWidgets.entitlements
-        MARKETING_VERSION: "0.14.0"
-        CURRENT_PROJECT_VERSION: "14"
+        MARKETING_VERSION: "0.15.0"
+        CURRENT_PROJECT_VERSION: "15"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.0"
