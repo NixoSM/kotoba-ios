@@ -1,0 +1,11 @@
+/* Texts the system shows outside the app (Shortcuts, Control Center, Lock Screen), in the iPhone language. Keys are the Italian texts in the Swift code. Checked by tools/check_translations.py. */
+"Cerca negli appunti" = "Search Clipboard";
+"Apre Kotoba e cerca il testo giapponese che hai copiato." = "Opens Kotoba and looks up the Japanese text you copied.";
+"Apri la lente" = "Open Lens";
+"Apre Kotoba con la fotocamera pronta a leggere." = "Opens Kotoba with the camera ready to read.";
+"Cerca appunti" = "Search Clipboard";
+"Lente" = "Lens";
+"Kotoba: cerca appunti" = "Kotoba: Search Clipboard";
+"Cerca in Kotoba il testo che hai copiato." = "Looks up the text you copied in Kotoba.";
+"Kotoba: lente" = "Kotoba: Lens";
+"Apre la fotocamera di Kotoba pronta a leggere." = "Opens Kotoba's camera ready to read.";

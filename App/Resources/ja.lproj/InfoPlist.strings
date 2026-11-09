@@ -1,0 +1,3 @@
+/* Permission prompts. The Italian text is also in project.yml. */
+"NSCameraUsageDescription" = "Kotoba はカメラで日本語の文字を読み取り、辞書で調べます。";
+"NSPhotoLibraryUsageDescription" = "Kotoba は選んだ画像から日本語の文字を読み取ります。";

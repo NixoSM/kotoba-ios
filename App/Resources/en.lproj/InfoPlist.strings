@@ -1,0 +1,3 @@
+/* Permission prompts. The Italian text is also in project.yml. */
+"NSCameraUsageDescription" = "Kotoba uses the camera to read Japanese text and look it up in the dictionary.";
+"NSPhotoLibraryUsageDescription" = "Kotoba reads Japanese text from the pictures you choose.";
