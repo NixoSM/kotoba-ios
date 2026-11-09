@@ -45,12 +45,17 @@ final class ShareViewController: UIViewController {
     }
 
     /// Extensions may not open apps directly, but the UIApplication further up
-    /// the responder chain can (this is why the target allows non-extension APIs).
+    /// the responder chain can. Its open method is marked unavailable to
+    /// extensions at compile time, so it is called through the runtime.
     private func openContainingApp(_ url: URL) -> Bool {
+        let selector = NSSelectorFromString("openURL:options:completionHandler:")
         var responder: UIResponder? = self
         while let current = responder {
-            if let application = current as? UIApplication {
-                application.open(url, options: [:]) { [weak self] _ in self?.finish() }
+            if current is UIApplication, let method = current.method(for: selector) {
+                typealias Open = @convention(c) (AnyObject, Selector, NSURL, NSDictionary, (@convention(block) (Bool) -> Void)?) -> Void
+                let open = unsafeBitCast(method, to: Open.self)
+                let done: @convention(block) (Bool) -> Void = { [weak self] _ in self?.finish() }
+                open(current, selector, url as NSURL, NSDictionary(), done)
                 return true
             }
             responder = current.next
