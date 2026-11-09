@@ -77,8 +77,9 @@ private struct PhotoView: View {
     var body: some View {
         Group {
             if let image {
-                PhotoReader(image: image, selecting: selecting, onMiss: { selecting = true },
-                            highlightLength: outcome.direct.first?.matchedText.count ?? 0) { text, line in
+                PhotoReader(image: image, selecting: selecting,
+                            highlightLength: outcome.direct.first?.matchedText.count ?? 0,
+                            onMiss: { selecting = true }) { text, line in
                     query = text
                     sentence = line
                 }
