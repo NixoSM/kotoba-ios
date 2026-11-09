@@ -454,6 +454,7 @@ public enum VerticalOCR {
             }
         }
         guard !found.isEmpty else { return nil }
+        found = tidy(found)
         let W = Double(image.width), H = Double(image.height)
         var line = OCRLine(text: [], boxes: [], vertical: true)
         var hit: Int?
@@ -473,6 +474,61 @@ public enum VerticalOCR {
         }
         if hit == nil { fraction = 0.999 }
         return Result(line: line, hit: hit ?? line.text.count - 1, fraction: fraction, em: column.em, frame: line.frame)
+    }
+
+    /// Fixes vertical punctuation from the characters around it: a 。 read as two
+    /// dots, and brackets (turned in vertical text) read as a dash or as the
+    /// wrong bracket. Both break the sentence sent to Anki.
+    static func tidy(_ items: [(cell: Int, char: Character)]) -> [(cell: Int, char: Character)] {
+        let dots: Set<Character> = [".", "．", "·", "・", "。", "｡"]
+        let commas: Set<Character> = [",", "，", "、", "､"]
+        // Several marks in one cell: one 。 or 、.
+        var merged: [(cell: Int, char: Character)] = []
+        var i = 0
+        while i < items.count {
+            var j = i
+            while j + 1 < items.count, items[j + 1].cell == items[i].cell { j += 1 }
+            let group = items[i...j].map(\.char)
+            if group.count > 1, group.allSatisfy({ dots.contains($0) || commas.contains($0) }) {
+                merged.append((items[i].cell, group.contains(where: { commas.contains($0) }) ? "、" : "。"))
+            } else {
+                merged.append(contentsOf: items[i...j])
+            }
+            i = j + 1
+        }
+        var chars = merged.map(\.char)
+        func isKana(_ c: Character) -> Bool {
+            guard let v = c.unicodeScalars.first?.value else { return false }
+            return (0x3041...0x30FF).contains(v)
+        }
+        // Vertical text has no use for an ASCII period, except in a number.
+        for k in chars.indices where chars[k] == "." || chars[k] == "．" || chars[k] == "｡" {
+            let before: Character? = k > 0 ? chars[k - 1] : nil
+            let after: Character? = k + 1 < chars.count ? chars[k + 1] : nil
+            if !(before?.isNumber == true && after?.isNumber == true) { chars[k] = "。" }
+        }
+        let strong: Set<Character> = ["-", "－", "_", "→", "‐", "−", "¬", "⌐"]
+        let enders: Set<Character> = ["。", "、", "！", "？", "!", "?", "」", "』", "…"]
+        var open = 0
+        for k in chars.indices {
+            let c = chars[k]
+            let before: Character? = k > 0 ? chars[k - 1] : nil
+            var dash = strong.contains(c)
+            // ー after anything but kana (and not part of ――) was a bracket.
+            if c == "ー", let before, !isKana(before), k + 1 >= chars.count || chars[k + 1] != "ー" { dash = true }
+            if dash {
+                // Closing when a quote is open, or right after a word (the quote began in an earlier column).
+                let closes = open > 0 || (before != nil && !enders.contains(before!))
+                chars[k] = closes ? "」" : "「"
+            } else if c == "「", open > 0 {
+                chars[k] = "」"
+            } else if c == "」", open == 0,
+                      let next = chars[(k + 1)...].firstIndex(where: { $0 == "「" || $0 == "」" }), chars[next] == "」" {
+                chars[k] = "「"
+            }
+            if chars[k] == "「" { open += 1 } else if chars[k] == "」" { open = max(0, open - 1) }
+        }
+        return zip(merged, chars).map { ($0.0.cell, $0.1) }
     }
 
     /// Vertical-only shapes the recognizer may return as something else.
