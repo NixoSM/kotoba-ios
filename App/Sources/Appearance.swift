@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreText
 import KotobaCore
 
 /// How results look: the same knobs as Yomitan's "Appearance" settings,
@@ -160,6 +161,17 @@ enum FontCatalog {
 
     static func all() -> [FontChoice] { builtIn + custom() }
 
+    #if KOTOBA_EXTENSION
+    /// The app gets its fonts from Info.plist; the share panel registers the
+    /// app's copies itself, once. A font that fails to load falls back to the
+    /// system serif (see `Font.kotoba`).
+    static func registerBundledFonts() {
+        for file in ["ShipporiMincho-Medium.ttf", "ShipporiMincho-Bold.ttf"] {
+            if let url = fileURL(file) { CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil) }
+        }
+    }
+    #endif
+
     static func choice(_ id: String) -> FontChoice {
         all().first { $0.id == id } ?? builtIn[1]
     }
@@ -174,11 +186,23 @@ enum FontCatalog {
         return "file:" + url.lastPathComponent
     }
 
+    /// The bundle that carries the font files. The share panel has none of
+    /// its own (they would double the app's size): it reads the app's, which
+    /// sits two folders up (Kotoba.app/PlugIns/KotobaShare.appex).
+    static let fontBundle: Bundle = {
+        #if KOTOBA_EXTENSION
+        let app = Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent()
+        return Bundle(url: app) ?? .main
+        #else
+        return .main
+        #endif
+    }()
+
     /// Where a font file lives: bundled with the app, or added by you.
     static func fileURL(_ file: String) -> URL? {
         let name = (file as NSString).lastPathComponent
-        if let bundled = Bundle.main.url(forResource: (name as NSString).deletingPathExtension,
-                                         withExtension: (name as NSString).pathExtension) { return bundled }
+        if let bundled = fontBundle.url(forResource: (name as NSString).deletingPathExtension,
+                                        withExtension: (name as NSString).pathExtension) { return bundled }
         let added = folder.appendingPathComponent(name)
         return FileManager.default.fileExists(atPath: added.path) ? added : nil
     }

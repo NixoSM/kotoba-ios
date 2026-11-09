@@ -23,6 +23,7 @@ final class ShareViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .clear
         URLOpener.responder = self
+        FontCatalog.registerBundledFonts()
     }
 
     override func viewDidAppear(_ animated: Bool) {
