@@ -86,9 +86,17 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         return hira == source ? nil : hira
     }
 
+    /// All steps and the new version number commit together: an app killed
+    /// halfway would otherwise retry an ALTER TABLE that already happened,
+    /// fail on "duplicate column", and never open the dictionaries again.
     private func migrate() throws {
         var version = 0
         try db.prepare("PRAGMA user_version").rows { version = $0.int(0) }
+        guard version < Self.schemaVersion else { return }
+        try db.transaction { try migrate(from: version) }
+    }
+
+    private func migrate(from version: Int) throws {
         if version < 2 {
             // v2: full-text index of definitions for IT/EN → JP search.
             // Dictionaries imported before this get indexed later by buildMissingReverseIndexes.

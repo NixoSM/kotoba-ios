@@ -42,7 +42,7 @@ public struct YomitanSettings: Sendable {
         // A backup wraps the options; a raw options object works too.
         let options = (root["options"] as? [String: Any]) ?? root
         guard let profiles = options["profiles"] as? [[String: Any]], !profiles.isEmpty else { throw ParseError.notYomitanSettings }
-        let current = min((options["profileCurrent"] as? Int) ?? 0, profiles.count - 1)
+        let current = min(max((options["profileCurrent"] as? Int) ?? 0, 0), profiles.count - 1)
         let profile = profiles[current]
         let o = profile["options"] as? [String: Any] ?? [:]
         let raw = String(decoding: data, as: UTF8.self)

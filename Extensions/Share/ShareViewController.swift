@@ -156,6 +156,8 @@ struct SharePanel: View {
         .onAppear { withAnimation(.snappy(duration: 0.3)) { shown = true } }
         .task(id: start) {
             var result = await model.search(query)
+            // Another character was tapped meanwhile: keep only the latest answer.
+            guard !Task.isCancelled else { return }
             result.sentence = text
             outcome = result
         }

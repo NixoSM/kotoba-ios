@@ -67,6 +67,7 @@ struct LookupPage: View {
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 var result = await model.search(lookup.text)
+                guard !Task.isCancelled else { return }
                 result.sentence = lookup.sentence
                 outcome = result
             }

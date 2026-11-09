@@ -55,7 +55,10 @@ struct SearchView: View {
                 // Small pause so we don't search on every keystroke.
                 try? await Task.sleep(for: .milliseconds(120))
                 guard !Task.isCancelled else { return }
-                outcome = await model.search(query)
+                let result = await model.search(query)
+                // A newer query took over while this one ran: its results would be stale.
+                guard !Task.isCancelled else { return }
+                outcome = result
                 searching = false
                 // Remember it once you stop typing and something was found.
                 try? await Task.sleep(for: .seconds(1.5))
