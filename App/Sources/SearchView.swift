@@ -43,6 +43,13 @@ struct SearchView: View {
                     model.pendingQuery = nil
                 }
             }
+            .onAppear {
+                // Opened from the Share sheet before this screen existed.
+                if let pending = model.pendingQuery {
+                    search(pending)
+                    model.pendingQuery = nil
+                }
+            }
             .task(id: query) {
                 searching = true
                 // Small pause so we don't search on every keystroke.
