@@ -14,6 +14,10 @@ struct AppSettings: Codable, Equatable {
     var history: [String] = []
     /// Language of the app's own words.
     var language = AppLanguage.system
+    /// Coming back to Kotoba with Japanese text copied searches it.
+    var clipboardLookup = true
+    /// Coming back to Kotoba right after a screenshot opens it, ready to tap.
+    var screenshotLookup = false
 
     init() {}
 
@@ -28,12 +32,15 @@ struct AppSettings: Codable, Equatable {
         appearance = (try? c.decodeIfPresent(Appearance.self, forKey: .appearance)) ?? Appearance()
         history = (try? c.decodeIfPresent([String].self, forKey: .history)) ?? []
         language = (try? c.decodeIfPresent(AppLanguage.self, forKey: .language)) ?? .system
+        clipboardLookup = (try? c.decodeIfPresent(Bool.self, forKey: .clipboardLookup)) ?? true
+        screenshotLookup = (try? c.decodeIfPresent(Bool.self, forKey: .screenshotLookup)) ?? false
     }
 
     private static let key = "settings.v1"
 
     static func load() -> AppSettings {
-        guard let data = UserDefaults.standard.data(forKey: key),
+        // Shared with the extensions; older versions saved in the app's own defaults.
+        guard let data = SharedStorage.defaults.data(forKey: key) ?? UserDefaults.standard.data(forKey: key),
               let settings = try? JSONDecoder().decode(AppSettings.self, from: data) else { return AppSettings() }
         return settings
     }
@@ -47,6 +54,6 @@ struct AppSettings: Codable, Equatable {
     }
 
     func save() {
-        if let data = try? JSONEncoder().encode(self) { UserDefaults.standard.set(data, forKey: Self.key) }
+        if let data = try? JSONEncoder().encode(self) { SharedStorage.defaults.set(data, forKey: Self.key) }
     }
 }

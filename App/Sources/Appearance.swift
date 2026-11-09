@@ -144,8 +144,7 @@ enum FontCatalog {
 
     /// Fonts you added (.ttf/.otf), kept in the app's own folder.
     static var folder: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let url = base.appendingPathComponent("Fonts", isDirectory: true)
+        let url = SharedStorage.folder.appendingPathComponent("Fonts", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

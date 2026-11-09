@@ -36,6 +36,14 @@ jobs:
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             build
+      - name: Record entitlements (App Group shared with the extensions)
+        run: |
+          APP=build/Build/Products/Release-iphoneos/Kotoba.app
+          for ext in "$APP"/PlugIns/*.appex; do
+            codesign -f -s - --entitlements "Entitlements/$(basename "$ext" .appex).entitlements" "$ext"
+          done
+          codesign -f -s - --entitlements Entitlements/Kotoba.entitlements "$APP"
+          codesign -d --entitlements - "$APP"
       - name: Package .ipa (Sideloadly signs it with your Apple ID)
         run: |
           mkdir -p Payload

@@ -44,7 +44,7 @@ struct ResultsWebView: UIViewRepresentable {
                 return decisionHandler(.cancel)
             }
             if action.navigationType == .linkActivated {
-                if url.scheme == "https" || url.scheme == "http" { UIApplication.shared.open(url) }
+                if url.scheme == "https" || url.scheme == "http" { Task { @MainActor in URLOpener.open(url) } }
                 return decisionHandler(.cancel)
             }
             decisionHandler(.allow)

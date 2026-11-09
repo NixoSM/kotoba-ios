@@ -1,6 +1,9 @@
 import Foundation
 import Observation
 import UIKit
+#if !KOTOBA_EXTENSION
+import Photos
+#endif
 import KotobaCore
 
 /// Owns the dictionary store and everything the screens share.
@@ -21,6 +24,11 @@ final class AppModel {
     }
     /// Set from outside (kotoba://search?q=…, camera) to run a search.
     var pendingQuery: String?
+    /// The tab on screen: 0 search, 1 camera, 2 dictionaries, 3 settings.
+    var selectedTab = 0
+    /// What the camera tab should open with.
+    enum CameraRequest: Equatable { case lens, screenshot(String) }
+    var cameraRequest: CameraRequest?
 
     let store: DictionaryStore?
     let scanner = TextScanner()
@@ -32,9 +40,12 @@ final class AppModel {
 
     init() {
         do {
-            let folder = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                                                     appropriateFor: nil, create: true)
-            store = try DictionaryStore(path: folder.appendingPathComponent("dictionaries.sqlite").path)
+            #if KOTOBA_EXTENSION
+            let folder = SharedStorage.folder
+            #else
+            let folder = SharedStorage.migrateToSharedFolder()
+            #endif
+            store = try DictionaryStore(path: folder.appendingPathComponent(SharedStorage.databaseName).path)
         } catch {
             store = nil
             errorMessage = tr("Impossibile aprire il database: {0}", error)
@@ -43,7 +54,9 @@ final class AppModel {
         Palette.apply(settings.appearance.theme)
         L10n.apply(settings.language)
         refresh()
+        #if !KOTOBA_EXTENSION
         buildMissingReverseIndexes()
+        #endif
     }
 
     private(set) var stylesheets: [String: String] = [:]
@@ -85,7 +98,7 @@ final class AppModel {
             errorMessage = tr("Non riesco a creare il collegamento per AnkiMobile.")
             return
         }
-        UIApplication.shared.open(url) { [weak self] opened in
+        URLOpener.open(url) { [weak self] opened in
             guard let self else { return }
             if opened {
                 self.settings.mined.insert(group.minedKey)
@@ -102,6 +115,7 @@ final class AppModel {
             toast = tr("Aggiunta ad Anki")
         case "search":
             pendingQuery = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "q" }?.value
+            selectedTab = 0
         default:
             break
         }
@@ -267,4 +281,78 @@ final class AppModel {
         try? store?.delete(dictionary: dictionary.id)
         refresh()
     }
+
+    // MARK: Quick lookup (app only)
+
+    #if !KOTOBA_EXTENSION
+    /// Called every time Kotoba comes to the front.
+    func becameActive() {
+        // The share panel may have changed settings (words sent to Anki).
+        let saved = AppSettings.load()
+        if saved != settings { settings = saved }
+        if let action = QuickAction.takePending() {
+            perform(action)
+            return
+        }
+        if settings.clipboardLookup, searchClipboard(force: false) { return }
+        if settings.screenshotLookup { openRecentScreenshot() }
+    }
+
+    func perform(_ action: QuickAction) {
+        switch action {
+        case .clipboard:
+            searchClipboard(force: true)
+        case .lens:
+            cameraRequest = .lens
+            selectedTab = 1
+        }
+    }
+
+    private static let clipboardKey = "lastClipboardChange"
+
+    /// Searches the clipboard if it holds Japanese text copied since last time
+    /// (or always, when asked by a shortcut). Returns whether it searched.
+    @discardableResult
+    func searchClipboard(force: Bool) -> Bool {
+        let board = UIPasteboard.general
+        let defaults = UserDefaults.standard
+        // changeCount can be read without the paste permission prompt.
+        guard force || board.changeCount != defaults.integer(forKey: Self.clipboardKey) else { return false }
+        defaults.set(board.changeCount, forKey: Self.clipboardKey)
+        guard board.hasStrings else {
+            if force { toast = tr("Negli appunti non c'è testo") }
+            return false
+        }
+        let text = (board.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.count <= (force ? 300 : 80), force || Kana.containsJapanese(text) else {
+            if force { toast = tr("Negli appunti non c'è testo") }
+            return false
+        }
+        pendingQuery = text
+        selectedTab = 0
+        toast = tr("Dagli appunti")
+        return true
+    }
+
+    private static let screenshotKey = "lastScreenshotSeen"
+
+    /// Opens a screenshot taken in the last two minutes that you haven't seen in Kotoba yet.
+    func openRecentScreenshot() {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard status == .authorized || status == .limited, let asset = Self.latestScreenshot(),
+              let date = asset.creationDate, Date().timeIntervalSince(date) < 120,
+              UserDefaults.standard.string(forKey: Self.screenshotKey) != asset.localIdentifier else { return }
+        UserDefaults.standard.set(asset.localIdentifier, forKey: Self.screenshotKey)
+        cameraRequest = .screenshot(asset.localIdentifier)
+        selectedTab = 1
+    }
+
+    nonisolated static func latestScreenshot() -> PHAsset? {
+        let options = PHFetchOptions()
+        options.predicate = NSPredicate(format: "(mediaSubtypes & %d) != 0", PHAssetMediaSubtype.photoScreenshot.rawValue)
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        options.fetchLimit = 1
+        return PHAsset.fetchAssets(with: .image, options: options).firstObject
+    }
+    #endif
 }

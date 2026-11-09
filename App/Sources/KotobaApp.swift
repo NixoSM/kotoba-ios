@@ -3,17 +3,18 @@ import SwiftUI
 @main
 struct KotobaApp: App {
     @State private var model = AppModel()
-    @State private var tab = 0
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
-            TabView(selection: $tab) {
+            @Bindable var model = model
+            TabView(selection: $model.selectedTab) {
                 SearchView()
                     .tabItem { Label(tr("Cerca"), systemImage: "magnifyingglass") }
                     .tag(0)
                 CameraView(onLookup: { text in
                     model.pendingQuery = text
-                    tab = 0
+                    model.selectedTab = 0
                 })
                     .tabItem { Label(tr("Fotocamera"), systemImage: "text.viewfinder") }
                     .tag(1)
@@ -31,7 +32,12 @@ struct KotobaApp: App {
             .id("\(model.settings.appearance.theme)|\(model.settings.language.rawValue)")
             .onOpenURL { url in
                 model.handle(url: url)
-                if url.host == "search" { tab = 0 }
+            }
+            .onAppear {
+                QuickAction.handler = { [model] action in model.perform(action) }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { model.becameActive() }
             }
             .overlay(alignment: .bottom) {
                 if let toast = model.toast {

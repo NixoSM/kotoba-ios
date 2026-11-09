@@ -216,6 +216,57 @@ enum L10n {
         "Formato di dizionario {0} non supportato.": ("Dictionary format {0} isn't supported.", "辞書の形式 {0} には対応していません。"),
         "Import fallito: {0}": ("Import failed: {0}", "読み込みに失敗しました：{0}"),
 
+        // Quick lookup
+        "Ricerca rapida": ("Quick lookup", "クイック検索"),
+        "Cerca quello che copi": ("Look up what you copy", "コピーした語を検索"),
+        "Apri gli screenshot appena fatti": ("Open fresh screenshots", "撮ったばかりのスクショを開く"),
+        "Scorciatoie e doppio tocco sul retro": ("Shortcuts and Back Tap", "ショートカットと背面タップ"),
+        "Copia una parola in qualsiasi app e torna su Kotoba: la cerca da sola. Perché iOS non lo chieda ogni volta: Impostazioni › App › Kotoba › Incolla da altre app › Consenti.":
+            ("Copy a word in any app and come back to Kotoba: it looks it up by itself. So iOS stops asking every time: Settings › Apps › Kotoba › Paste from Other Apps › Allow.",
+             "どのアプリでも単語をコピーして Kotoba に戻ると、自動で検索します。毎回確認されないようにするには：設定 › アプリ › Kotoba › ほかのAppからペースト › 許可。"),
+        "Dal menu Condividi": ("From the Share menu", "共有メニューから"),
+        "Seleziona del testo in qualsiasi app, tocca Condividi e poi Kotoba: la definizione appare in un pannello, senza lasciare l'app in cui leggi.":
+            ("Select text in any app, tap Share, then Kotoba: the definition appears in a panel without leaving the app you're reading.",
+             "どのアプリでも文字を選択して「共有」→「Kotoba」をタップすると、読んでいるアプリを離れずにパネルで意味が表示されます。"),
+        "Centro di Controllo": ("Control Center", "コントロールセンター"),
+        "Apri il Centro di Controllo, tieni premuto su uno spazio vuoto, tocca «Aggiungi un controllo» e cerca Kotoba: «Cerca appunti» e «Lente».":
+            ("Open Control Center, press and hold an empty space, tap “Add a Control” and search for Kotoba: “Cerca appunti” and “Lente”.",
+             "コントロールセンターを開き、空いた場所を長押しして「コントロールを追加」から Kotoba を検索：「Cerca appunti」と「Lente」。"),
+        "Schermata di blocco": ("Lock Screen", "ロック画面"),
+        "Tieni premuto sulla schermata di blocco, tocca Personalizza › Schermata di blocco e sostituisci la torcia o la fotocamera con un controllo di Kotoba.":
+            ("Press and hold the Lock Screen, tap Customize › Lock Screen and replace the flashlight or camera with a Kotoba control.",
+             "ロック画面を長押しして「カスタマイズ」›「ロック画面」をタップし、ライトやカメラを Kotoba のコントロールに置き換えます。"),
+        "Doppio tocco sul retro": ("Back Tap", "背面タップ"),
+        "1. Nell'app Comandi Rapidi crea un comando con l'azione Kotoba «Cerca negli appunti». 2. Impostazioni › Accessibilità › Tocco › Tocca il retro › Doppio tocco: scegli quel comando. Poi copia una parola e tocca due volte il retro dell'iPhone.":
+            ("1. In the Shortcuts app, create a shortcut with the Kotoba action “Cerca negli appunti”. 2. Settings › Accessibility › Touch › Back Tap › Double Tap: choose that shortcut. Then copy a word and double-tap the back of the iPhone.",
+             "1. ショートカットアプリで Kotoba のアクション「Cerca negli appunti」を使ったショートカットを作成。2. 設定 › アクセシビリティ › タッチ › 背面タップ › ダブルタップでそのショートカットを選択。あとは単語をコピーして iPhone の背面を2回タップ。"),
+        "«Cerca gli appunti in Kotoba» oppure «Apri la lente di Kotoba».":
+            ("“Search clipboard in Kotoba” or “Open Kotoba lens”.", "「Search clipboard in Kotoba」または「Open Kotoba lens」。"),
+        "Dagli appunti": ("From the clipboard", "クリップボードから"),
+        "Negli appunti non c'è testo": ("There's no text on the clipboard", "クリップボードに文字がありません"),
+        "Apri in Kotoba": ("Open in Kotoba", "Kotoba で開く"),
+
+        // Camera
+        "Lente": ("Lens", "レンズ"),
+        "Foto": ("Photo", "写真"),
+        "Tocca": ("Tap", "タップ"),
+        "Seleziona": ("Select", "選択"),
+        "Ultimo screenshot": ("Latest screenshot", "最新のスクショ"),
+        "Scatta una foto, scegline una o apri il tuo ultimo screenshot. Poi tocca una parola giapponese: la definizione appare qui sotto.":
+            ("Take a photo, pick one or open your latest screenshot. Then tap a Japanese word: its definition appears below.",
+             "写真を撮るか選ぶか、最新のスクショを開いてください。日本語の単語をタップすると、下に意味が表示されます。"),
+        "Kotoba non può vedere le foto: Impostazioni › App › Kotoba › Foto.":
+            ("Kotoba can't see your photos: Settings › Apps › Kotoba › Photos.", "Kotoba が写真にアクセスできません：設定 › アプリ › Kotoba › 写真。"),
+        "Non trovo screenshot.": ("No screenshots found.", "スクショが見つかりません。"),
+        "La lente non è disponibile": ("The lens isn't available", "レンズは利用できません"),
+        "Questo iPhone non riconosce il giapponese dal vivo. Usa la modalità Foto.":
+            ("This iPhone can't read Japanese live. Use Photo mode.", "この iPhone はライブで日本語を認識できません。「写真」モードを使ってください。"),
+        "Serve la fotocamera": ("Camera access needed", "カメラへのアクセスが必要です"),
+        "Consenti l'accesso in Impostazioni › App › Kotoba › Fotocamera.":
+            ("Allow access in Settings › Apps › Kotoba › Camera.", "設定 › アプリ › Kotoba › カメラ で許可してください。"),
+        "Inquadra una parola con il mirino. Tocca ⏸ per fermare l'immagine e leggere con calma.":
+            ("Aim the crosshair at a word. Tap ⏸ to freeze the picture and read calmly.", "照準を単語に合わせてください。⏸ で画面を止めてゆっくり読めます。"),
+
         // Grammar
         "negativo": ("negative", "否定"),
         "passato": ("past", "過去"),

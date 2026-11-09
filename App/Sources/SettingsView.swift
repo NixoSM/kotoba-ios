@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import Photos
 import KotobaCore
 
 struct SettingsView: View {
@@ -26,6 +27,33 @@ struct SettingsView: View {
                             }
                         }
                     }
+                }
+
+                Section {
+                    Toggle(isOn: $model.settings.clipboardLookup) {
+                        Label(tr("Cerca quello che copi"), systemImage: "doc.on.clipboard")
+                    }
+                    Toggle(isOn: Binding(
+                        get: { model.settings.screenshotLookup },
+                        set: { on in
+                            guard on else { model.settings.screenshotLookup = false; return }
+                            PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
+                                Task { @MainActor in
+                                    model.settings.screenshotLookup = status == .authorized || status == .limited
+                                }
+                            }
+                        })) {
+                        Label(tr("Apri gli screenshot appena fatti"), systemImage: "camera.metering.matrix")
+                    }
+                    NavigationLink {
+                        QuickLookupGuide()
+                    } label: {
+                        Label(tr("Scorciatoie e doppio tocco sul retro"), systemImage: "hand.tap")
+                    }
+                } header: {
+                    Text(tr("Ricerca rapida"))
+                } footer: {
+                    Text(tr("Copia una parola in qualsiasi app e torna su Kotoba: la cerca da sola. Perché iOS non lo chieda ogni volta: Impostazioni › App › Kotoba › Incolla da altre app › Consenti."))
                 }
 
                 Section {
@@ -125,5 +153,37 @@ private struct AnkiFormatSection: View {
                  ? tr("Segnaposto disponibili:") + " {expression} {reading} {furigana} {furigana-plain} {glossary} {glossary-first} {sentence} {cloze-prefix} {cloze-body} {cloze-suffix} {pitch-accents} {frequencies} {frequency-harmonic-rank} {part-of-speech}."
                  : tr("Per ora restano vuoti:") + " " + unsupported.map { "{\($0)}" }.joined(separator: " ") + ". " + tr("Audio e immagini non passano tramite il collegamento di AnkiMobile."))
         }
+    }
+}
+
+/// How to reach Kotoba without opening it: Control Center, Lock Screen, Back Tap, Share.
+private struct QuickLookupGuide: View {
+    var body: some View {
+        List {
+            step("square.and.arrow.up", tr("Dal menu Condividi"),
+                 tr("Seleziona del testo in qualsiasi app, tocca Condividi e poi Kotoba: la definizione appare in un pannello, senza lasciare l'app in cui leggi."))
+            step("switch.2", tr("Centro di Controllo"),
+                 tr("Apri il Centro di Controllo, tieni premuto su uno spazio vuoto, tocca «Aggiungi un controllo» e cerca Kotoba: «Cerca appunti» e «Lente»."))
+            step("lock", tr("Schermata di blocco"),
+                 tr("Tieni premuto sulla schermata di blocco, tocca Personalizza › Schermata di blocco e sostituisci la torcia o la fotocamera con un controllo di Kotoba."))
+            step("hand.tap", tr("Doppio tocco sul retro"),
+                 tr("1. Nell'app Comandi Rapidi crea un comando con l'azione Kotoba «Cerca negli appunti». 2. Impostazioni › Accessibilità › Tocco › Tocca il retro › Doppio tocco: scegli quel comando. Poi copia una parola e tocca due volte il retro dell'iPhone."))
+            step("waveform", "Siri", tr("«Cerca gli appunti in Kotoba» oppure «Apri la lente di Kotoba»."))
+        }
+        .scrollContentBackground(.hidden)
+        .background(Palette.paper)
+        .navigationTitle(tr("Ricerca rapida"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func step(_ icon: String, _ title: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: icon).font(.title3).foregroundStyle(Palette.shu).frame(width: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.headline)
+                Text(text).font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 6)
     }
 }
