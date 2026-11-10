@@ -96,22 +96,7 @@ struct ResultsWebView: UIViewRepresentable {
 /// Serves images stored inside dictionaries to the results page.
 final class MediaSchemeHandler: NSObject, WKURLSchemeHandler {
     static let shared = MediaSchemeHandler()
-    static let scheme = "kotoba-media"
-    /// Set once at launch.
-    nonisolated(unsafe) static var store: DictionaryStore?
-
-    /// A font file, bundled or added by the user.
-    static func fontURL(_ file: String) -> String {
-        scheme + "://font/" + (file.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? file)
-    }
-
-    static func url(dictionary: String, path: String) -> String {
-        var c = URLComponents()
-        c.scheme = scheme
-        c.host = "m"
-        c.queryItems = [URLQueryItem(name: "d", value: dictionary), URLQueryItem(name: "p", value: path)]
-        return c.string ?? ""
-    }
+    static let scheme = MediaLink.scheme
 
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         if let url = task.request.url, url.host == "font" {
@@ -131,7 +116,7 @@ final class MediaSchemeHandler: NSObject, WKURLSchemeHandler {
               let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
               let dictionary = items.first(where: { $0.name == "d" })?.value,
               let path = items.first(where: { $0.name == "p" })?.value,
-              let data = Self.store?.media(dictionary: dictionary, path: path) else {
+              let data = MediaLink.store?.media(dictionary: dictionary, path: path) else {
             task.didFailWithError(URLError(.fileDoesNotExist))
             return
         }

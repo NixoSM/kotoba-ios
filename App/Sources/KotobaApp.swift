@@ -26,9 +26,9 @@ struct KotobaApp: App {
                     .tabItem { Label(tr("Dal PC"), systemImage: "desktopcomputer") }
                     .badge(hooker.unread)
                     .tag(4)
-                DictionariesView()
-                    .tabItem { Label(tr("Dizionari"), systemImage: "books.vertical") }
-                    .tag(2)
+                WordsView()
+                    .tabItem { Label(tr("Parole"), systemImage: "character.book.closed") }
+                    .tag(5)
                 SettingsView()
                     .tabItem { Label(tr("Impostazioni"), systemImage: "slider.horizontal.3") }
                     .tag(3)
@@ -37,8 +37,10 @@ struct KotobaApp: App {
             .environment(hooker)
             .tint(Palette.shu)
             .preferredColorScheme(ThemePalette.colorScheme(for: model.settings.appearance.theme))
-            // Rebuild the screens so every colour and word follows a new theme or language.
-            .id("\(model.settings.appearance.theme)|\(model.settings.language.rawValue)")
+            // A new language rebuilds the screens so every word follows it. A new
+            // theme does not need to: colours are read through ThemeStore, and the
+            // screens that used one repaint in place, keeping what was open.
+            .id(model.settings.language)
             .onOpenURL { url in
                 model.handle(url: url)
             }

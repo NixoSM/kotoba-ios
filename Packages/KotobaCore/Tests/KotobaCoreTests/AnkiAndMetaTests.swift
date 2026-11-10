@@ -2,6 +2,12 @@ import XCTest
 @testable import KotobaCore
 
 final class AnkiAndMetaTests: XCTestCase {
+    /// The field editor offers this list: it must be exactly what can be filled.
+    func testTheListOfPlaceholdersIsComplete() {
+        XCTAssertEqual(Set(AnkiFieldRenderer.supportedMarkers), AnkiFieldRenderer.markerKeys)
+        XCTAssertEqual(AnkiFieldRenderer.supportedMarkers.count, AnkiFieldRenderer.markerKeys.count, "no name twice")
+    }
+
     func testFurigana() {
         XCTAssertEqual(Furigana.ankiPlain(expression: "食べ物", reading: "たべもの"), "食[た]べ 物[もの]")
         XCTAssertEqual(Furigana.ankiPlain(expression: "攻撃", reading: "こうげき"), "攻撃[こうげき]")
@@ -59,6 +65,26 @@ final class AnkiAndMetaTests: XCTestCase {
         XCTAssertTrue(s.hasPrefix("anki://x-callback-url/addnote?type=Animecards&deck=Studio%3A%3AMining&dupes=1"), s)
         XCTAssertTrue(s.contains("fldWord=%E9%A3%9F%E3%81%B9%E3%82%8B"), s)
         XCTAssertTrue(s.contains("x-success=kotoba%3A%2F%2Fmined"), s)
+    }
+
+    /// Field names are part of the link. One with a space ("Word Reading", as
+    /// in the Kaishi deck), in Japanese, or with a sign that means something
+    /// in a link used to stop the app when ＋ was tapped.
+    func testAnkiMobileURLWithAnyFieldName() throws {
+        let names = ["Word Reading", "単語", "A&B=C#D", "100% sure?", "Campo 6"]
+        let format = AnkiNoteFormat(deck: "日本語 Mining", model: "Kaishi 1.5k",
+                                    fields: names.map { .init(name: $0, template: "{expression}") }, tags: ["kotoba", "新"])
+        let url = try XCTUnwrap(AnkiMobileLink.url(format: format, context: context, returnURL: "kotoba://mined?k=%E9%A3%9F"))
+        // What AnkiMobile reads back out of the link.
+        let items = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+        var read: [String: String] = [:]
+        for item in items { read[item.name] = item.value ?? "" }
+        XCTAssertEqual(read["type"], "Kaishi 1.5k")
+        XCTAssertEqual(read["deck"], "日本語 Mining")
+        XCTAssertEqual(read["tags"], "kotoba 新")
+        for name in names { XCTAssertEqual(read["fld" + name], "食べる", name) }
+        XCTAssertEqual(read["x-success"], "kotoba://mined?k=%E9%A3%9F")
+        XCTAssertEqual(items.count, 4 + names.count + 1)
     }
 
     func testYomitanSettings() throws {

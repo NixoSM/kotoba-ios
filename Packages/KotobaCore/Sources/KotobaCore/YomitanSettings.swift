@@ -119,7 +119,7 @@ public struct YomitanSettings: Sendable {
     }
 }
 
-#if canImport(SQLite3)
+#if canImport(SQLite3) || canImport(CSQLite3)
 extension DictionaryStore {
     /// Applies Yomitan's dictionary order and on/off switches to the installed
     /// dictionaries. Dictionaries Yomitan doesn't mention keep their place after.

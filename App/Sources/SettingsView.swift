@@ -16,16 +16,17 @@ struct SettingsView: View {
                     NavigationLink {
                         AppearanceView()
                     } label: {
-                        HStack(spacing: 14) {
-                            Text("字").font(.mincho(26, bold: true)).foregroundStyle(Palette.shu)
-                                .frame(width: 40, height: 40)
-                                .background(Palette.shu.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(tr("Aspetto"))
-                                Text("\(FontCatalog.choice(model.settings.appearance.bodyFont).name) · \(Int(model.settings.appearance.fontSize)) pt · \(model.settings.appearance.layout.label)")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
+                        SettingsDoor(glyph: "字", title: tr("Aspetto"), detail: appearanceSummary)
+                    }
+                    NavigationLink {
+                        DictionariesView()
+                    } label: {
+                        SettingsDoor(glyph: "辞", title: tr("Dizionari"), detail: dictionariesSummary)
+                    }
+                    NavigationLink {
+                        AnkiSettingsView()
+                    } label: {
+                        SettingsDoor(glyph: "札", title: "Anki", detail: ankiSummary)
                     }
                 }
 
@@ -39,7 +40,10 @@ struct SettingsView: View {
                             guard on else { model.settings.screenshotLookup = false; return }
                             PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
                                 Task { @MainActor in
-                                    model.settings.screenshotLookup = status == .authorized || status == .limited
+                                    let allowed = status == .authorized || status == .limited
+                                    model.settings.screenshotLookup = allowed
+                                    // The switch goes back off: say why.
+                                    if !allowed { model.errorMessage = tr("Kotoba non può vedere le foto: Impostazioni › App › Kotoba › Foto.") }
                                 }
                             }
                         })) {
@@ -82,27 +86,15 @@ struct SettingsView: View {
                     Picker(tr("Dizionario di frequenza"), selection: $model.settings.sortFrequencyDictionary) {
                         Text(tr("Il primo disponibile")).tag(String?.none)
                         ForEach(frequencyDictionaries, id: \.self) { Text($0).tag(String?.some($0)) }
+                        // Chosen (or named by a Yomitan backup) but not on this phone, or switched
+                        // off: still listed, so the choice shows. Meanwhile the first available is used.
+                        if let chosen = model.settings.sortFrequencyDictionary, !frequencyDictionaries.contains(chosen) {
+                            Text(tr("{0} (non disponibile)", chosen)).tag(String?.some(chosen))
+                        }
                     }
                 }
 
-                if model.settings.ankiFormat != nil {
-                    AnkiFormatSection(format: Binding(
-                        get: { model.settings.ankiFormat ?? .example },
-                        set: { model.settings.ankiFormat = $0 }))
-                    Section {
-                        Button(tr("Dimentica le parole già minate"), role: .destructive) { model.settings.mined = [] }
-                    } footer: {
-                        Text(tr("AnkiMobile non permette di controllare i duplicati: Kotoba ricorda da solo le {0} parole che hai già inviato.", model.settings.mined.count))
-                    }
-                } else {
-                    Section {
-                        Button(tr("Configura una nota Anki a mano")) { model.settings.ankiFormat = .example }
-                    } header: {
-                        Text("Anki")
-                    } footer: {
-                        Text(tr("Oppure importa le impostazioni di Yomitan qui sopra: la tua nota viene configurata da sola."))
-                    }
-                }
+                AboutSection()
             }
             .scrollContentBackground(.hidden)
             .background(Palette.paper)
@@ -114,44 +106,103 @@ struct SettingsView: View {
             .onAppear { frequencyDictionaries = model.store?.frequencyDictionaries() ?? [] }
         }
     }
+
+    private var appearanceSummary: String {
+        let a = model.settings.appearance
+        return "\(FontCatalog.choice(a.bodyFont).name) · \(Int(a.fontSize)) pt · \(a.layout.label)"
+    }
+
+    private var dictionariesSummary: String {
+        if case .running(let title, _, _, _) = model.importStatus { return tr("Importo {0}…", title) }
+        if model.dictionaries.isEmpty { return tr("Nessuno: tocca per importarne uno") }
+        let on = model.dictionaries.filter(\.enabled).count
+        return on == model.dictionaries.count
+            ? tr("{0} installati", model.dictionaries.count)
+            : tr("{0} installati, {1} attivi", model.dictionaries.count, on)
+    }
+
+    private var ankiSummary: String {
+        guard let format = model.settings.ankiFormat else { return tr("Non configurato") }
+        return "\(format.model) → \(format.deck)"
+    }
 }
 
-private struct AnkiFormatSection: View {
-    @Binding var format: AnkiNoteFormat
+/// A row that leads to a page of settings: a kanji in a vermilion square, like a door plate.
+private struct SettingsDoor: View {
+    let glyph: String
+    let title: String
+    let detail: String
 
     var body: some View {
-        Section {
-            LabeledContent(tr("Mazzo")) { TextField(tr("Mazzo"), text: $format.deck).multilineTextAlignment(.trailing) }
-            LabeledContent(tr("Tipo di nota")) { TextField(tr("Tipo di nota"), text: $format.model).multilineTextAlignment(.trailing) }
-            LabeledContent(tr("Etichette")) {
-                TextField(tr("Etichette"), text: Binding(
-                    get: { format.tags.joined(separator: " ") },
-                    set: { format.tags = $0.split(separator: " ").map(String.init) }))
-                .multilineTextAlignment(.trailing)
+        HStack(spacing: 14) {
+            Text(glyph).font(.mincho(26, bold: true)).foregroundStyle(Palette.shu)
+                .frame(width: 40, height: 40)
+                .background(Palette.shu.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
-        } header: {
-            Text(tr("Nota Anki (AnkiMobile)"))
-        } footer: {
-            Text(tr("I nomi devono essere identici a quelli in AnkiMobile, maiuscole comprese."))
         }
+    }
+}
 
+/// Version, how long the signature lasts, and the way to the diagnostics page.
+private struct AboutSection: View {
+    var body: some View {
         Section {
-            ForEach($format.fields, id: \.name) { $field in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(field.name).font(.subheadline.weight(.semibold))
-                    TextField(tr("vuoto"), text: $field.template)
-                        .font(.footnote.monospaced())
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
+            LabeledContent(tr("Versione"), value: AppVersion.text)
+            if let expiry = SigningInfo.current {
+                LabeledContent(tr("Firma"), value: SignatureText.status(expiry: expiry))
+            }
+            NavigationLink {
+                DiagnosticsView()
+            } label: {
+                Label(tr("Diagnostica"), systemImage: "stethoscope")
             }
         } header: {
-            Text(tr("Campi"))
+            Text(tr("Informazioni"))
         } footer: {
-            let unsupported = AnkiFieldRenderer.unsupportedMarkers(in: format)
-            Text(unsupported.isEmpty
-                 ? tr("Segnaposto disponibili:") + " {expression} {reading} {furigana} {furigana-plain} {glossary} {glossary-first} {sentence} {cloze-prefix} {cloze-body} {cloze-suffix} {pitch-accents} {frequencies} {frequency-harmonic-rank} {part-of-speech}."
-                 : tr("Per ora restano vuoti:") + " " + unsupported.map { "{\($0)}" }.joined(separator: " ") + ". " + tr("Audio e immagini non passano tramite il collegamento di AnkiMobile."))
+            if SigningInfo.current != nil {
+                Text(tr("Con un Apple ID gratuito l'app si apre per 7 giorni dall'installazione. Reinstallala con Sideloadly prima della scadenza: dizionari e impostazioni restano."))
+            }
+        }
+    }
+}
+
+enum AppVersion {
+    static var text: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(version) (\(build))"
+    }
+}
+
+/// The signature's expiry in words.
+enum SignatureText {
+    static func status(expiry: Date, now: Date = Date()) -> String {
+        switch SigningInfo.notice(expiry: expiry, now: now) {
+        case .expired: tr("scaduta")
+        case .soon(let days): soon(days)
+        case .none: tr("valida fino al {0}", expiry.formatted(date: .abbreviated, time: .shortened))
+        }
+    }
+
+    /// The sentence for the home screen; nil while there is nothing to worry about.
+    static func warning(expiry: Date?, now: Date = Date()) -> String? {
+        switch SigningInfo.notice(expiry: expiry, now: now) {
+        case .none: nil
+        case .expired: tr("La firma dell'app è scaduta: alla prossima apertura non partirà. Reinstallala con Sideloadly; dizionari e impostazioni restano.")
+        case .soon(let days): tr("La firma dell'app {0}. Reinstallala con Sideloadly per continuare a usarla; dizionari e impostazioni restano.", soon(days))
+        }
+    }
+
+    private static func soon(_ days: Int) -> String {
+        switch days {
+        case 0: tr("scade oggi")
+        case 1: tr("scade domani")
+        default: tr("scade tra {0} giorni", days)
         }
     }
 }

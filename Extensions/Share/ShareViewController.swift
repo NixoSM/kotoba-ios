@@ -23,6 +23,7 @@ final class ShareViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .clear
         URLOpener.responder = self
+        Diagnostics.shared.source = "share"
         FontCatalog.registerBundledFonts()
     }
 
@@ -34,7 +35,10 @@ final class ShareViewController: UIViewController {
     }
 
     private func start() async {
-        guard let text = await sharedText() else { return finish() }
+        guard let text = await sharedText() else {
+            Diagnostics.shared.log("Nothing to read in what was shared")
+            return finish()
+        }
         if SharedStorage.databaseIsShared {
             showPanel(text)
         } else {

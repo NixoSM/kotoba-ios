@@ -122,6 +122,20 @@ public enum AnkiFieldRenderer {
         s.lowercased().replacingOccurrences(of: " ", with: "-")
     }
 
+    /// The placeholders a field can hold, in the order a note is usually
+    /// built: the word, its meaning, the sentence, then the extras.
+    public static let supportedMarkers = [
+        "expression", "reading", "furigana", "furigana-plain",
+        "glossary", "glossary-first", "glossary-brief", "glossary-first-brief", "glossary-no-dictionary",
+        "sentence", "cloze-prefix", "cloze-body", "cloze-suffix",
+        "pitch-accents", "pitch-accent-graphs", "pitch-accent-positions",
+        "frequencies", "frequency-harmonic-rank", "frequency-average-rank",
+        "part-of-speech", "conjugation", "dictionary", "search-query", "tags",
+    ]
+
+    /// For the tests: the list above must name exactly what can be filled.
+    static var markerKeys: Set<String> { Set(markers.keys) }
+
     private static let markers: [String: (MiningContext) -> String] = [
         "expression": { $0.expression },
         "reading": { $0.reading },
@@ -260,12 +274,18 @@ public enum AnkiMobileLink {
         components.scheme = "anki"
         components.host = "x-callback-url"
         components.path = "/addnote"
-        components.queryItems = items
         // URLComponents leaves "+" and "&"-like characters that AnkiMobile would misread: encode strictly.
+        // Names as well as values: a field called "Word Reading" or 単語 is
+        // part of the name here, and Foundation stops the app on a query
+        // that still holds a space or a non-ASCII letter.
         components.percentEncodedQuery = items.map { item in
-            "\(item.name)=\((item.value ?? "").addingPercentEncoding(withAllowedCharacters: strict) ?? "")"
+            "\(encoded(item.name))=\(encoded(item.value ?? ""))"
         }.joined(separator: "&")
         return components.url
+    }
+
+    private static func encoded(_ text: String) -> String {
+        text.addingPercentEncoding(withAllowedCharacters: strict) ?? ""
     }
 
     private static let strict = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")

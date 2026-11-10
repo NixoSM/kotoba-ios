@@ -1,12 +1,61 @@
 name: Build
 
+# A Mac minute counts ten times against the allowance of a private repository,
+# so the Mac is used only for what needs one: building the app, and the camera
+# tests when camera code changed. Everything else runs on Linux.
+#
+# A draft pull request never uses the Mac. Pressing "Ready for review" on it
+# starts a new run that does (that is what "ready_for_review" below is for),
+# and so does "Run workflow" in the Actions tab.
+
 on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
+    inputs:
+      full:
+        description: "Also run the camera (OCR) tests on a Mac"
+        type: boolean
+        default: false
+
+# A newer commit on the same branch replaces the run still in progress.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
+  # Decides which of the expensive jobs this change needs.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.plan.outputs.app }}
+      ocr: ${{ steps.plan.outputs.ocr }}
+      pages: ${{ steps.plan.outputs.pages }}
+      tree: ${{ steps.plan.outputs.tree }}
+      built_run: ${{ steps.plan.outputs.built_run }}
+      mac: ${{ steps.plan.outputs.mac }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check the planning script itself
+        run: python3 tools/ci_plan.py --self-test
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          FULL: ${{ inputs.full }}
+        shell: bash
+        run: python3 tools/ci_plan.py
+
   # Fails if any text would still show in Italian in the English or Japanese app.
   translations:
     runs-on: ubuntu-latest
@@ -15,14 +64,81 @@ jobs:
       - name: Check English and Japanese translations
         run: python3 tools/check_translations.py
 
-  test-core:
+  # Everything Linux can check before a Mac is paid for: the dictionary
+  # engine, the app's logic (search, results page, imports, settings), and a
+  # compiler's look at the screens. The Mac build waits for this job.
+  engine:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    container: swift:6.2-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SQLite
+        run: apt-get update -q && apt-get install -y -q libsqlite3-dev
+      - name: Test the dictionary engine
+        shell: bash
+        run: set -o pipefail; swift test --package-path Packages/KotobaCore 2>&1 | tee test.log
+      - name: Speed benchmark
+        if: always()
+        shell: bash
+        run: grep -E "^(BENCH|  )" test.log || true
+      # The same run writes the results pages that the next job photographs.
+      - name: Test the app's logic
+        shell: bash
+        env:
+          KOTOBA_RENDER_OUT: pages
+        run: swift test
+      - name: Type-check the screens (stand-ins for SwiftUI, see tools/screen-check)
+        shell: bash
+        run: tools/screen-check/run.sh
+      - uses: actions/upload-artifact@v4
+        if: needs.changes.outputs.pages == 'true'
+        with:
+          name: results-pages-html
+          path: pages/*.html
+          retention-days: 1
+
+  # Photographs of the results page (every theme, the kanji box, the list of
+  # words that start with…), taken in a browser from the app's own HTML.
+  # They are in Artifacts as "results-pages": a look before installing.
+  screenshots:
+    needs: [changes, engine]
+    if: needs.changes.outputs.pages == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: results-pages-html
+          path: pages
+      - name: Install the browser and Japanese fonts
+        run: |
+          # Pinned, like everything else that builds or checks the app.
+          npm install --no-save --no-audit --no-fund playwright@1.63.0
+          npx playwright install --with-deps chromium
+          sudo apt-get install -y -q fonts-noto-cjk
+      - name: Photograph the pages
+        run: node tools/render_screenshots.js pages
+      - uses: actions/upload-artifact@v4
+        with:
+          name: results-pages
+          path: pages/*.png
+          retention-days: 14
+
+  # Apple's text recognizer exists only on a Mac. Two minutes of Mac time,
+  # so it runs when the camera code changed, or when asked for by hand.
+  camera-tests:
+    needs: changes
+    if: needs.changes.outputs.ocr == 'true' && needs.changes.outputs.built_run == '' && needs.changes.outputs.mac == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
-      - name: Test the dictionary engine and the vertical text reader
+          # Pinned: bump on purpose, after a green build with the new one.
+          xcode-version: "26.6"
+      - name: Test the engine and the vertical text reader on a Mac
         env:
           KOTOBA_BENCH_OUT: ${{ runner.temp }}/bench
         shell: bash
@@ -39,13 +155,14 @@ jobs:
           retention-days: 7
 
   build-ipa:
-    needs: [test-core, translations]
+    needs: [changes, translations, engine]
+    if: needs.changes.outputs.app == 'true' && needs.changes.outputs.built_run == '' && needs.changes.outputs.mac == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: "26.6"
       - name: Generate Xcode project
         run: |
           brew install xcodegen
@@ -82,6 +199,22 @@ jobs:
           name: Kotoba-ipa
           path: Kotoba.ipa
           retention-days: 30
+      # A marker named after the exact source tree. When the same code reaches
+      # main (a merged pull request), the run there finds it and does not
+      # spend Mac minutes building the same app twice.
+      - name: Remember that this code is built
+        run: echo "${{ needs.changes.outputs.tree }}" > built.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: built-${{ needs.changes.outputs.tree }}
+          path: built.txt
+          retention-days: 30
+      - name: Where the app is
+        run: |
+          {
+            echo "### Kotoba.ipa is ready"
+            echo "Scroll to **Artifacts** at the bottom of this page and download **Kotoba-ipa**."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Kotoba's Textractor extension (Windows DLLs, cross-built with MinGW).
   textractor-extension:

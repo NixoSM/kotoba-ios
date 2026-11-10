@@ -4,7 +4,9 @@ Dizionario giapponese per iPhone ispirato a Yomitan: dizionari impilabili,
 aspetto personalizzabile, import dei backup Yomitan, ricerca EN/IT→JP,
 mining su Anki e fotocamera con OCR.
 
-Stato: **0.4** — dizionari Yomitan, de-coniugazione, romaji, ricerca per significato, frequenze e accento, import delle impostazioni Yomitan, mining su AnkiMobile, fotocamera con Live Text.
+Stato: **0.16** — dizionari Yomitan (anche di kanji), de-coniugazione, romaji, ricerca per significato, parole che iniziano con ciò che scrivi, frequenze e accento, import delle impostazioni Yomitan, mining su AnkiMobile con l'elenco delle parole inviate, fotocamera con OCR anche verticale, testo dal PC (Textractor), pannello nel menu Condividi.
+
+Alla prima apertura l'app chiede un dizionario e lo importa da lì; poi i dizionari stanno in **Impostazioni › Dizionari**. Se qualcosa non va, **Impostazioni › Diagnostica** raccoglie versione, dizionari e ultimi eventi in un testo da copiare.
 
 ## Visual novel sul PC
 
@@ -13,10 +15,14 @@ tocchi una parola e la cerchi. Come prepararlo: [docs/texthooker.md](docs/textho
 
 ## Struttura
 
-- `Packages/KotobaCore` — il motore (formato Yomitan, de-coniugazione, scansione del testo). Swift puro, con test.
-- `App/` — l'app iOS (SwiftUI).
-- `project.yml` — descrizione del progetto Xcode, generato con XcodeGen.
-- `.github/workflows/build.yml` — a ogni modifica su `main`, GitHub esegue i test e compila `Kotoba.ipa` (non firmata).
+- `Packages/KotobaCore` — il motore (formato Yomitan, de-coniugazione, scansione del testo). Swift puro, con test che girano su Linux.
+- `App/` — l'app iOS (SwiftUI). La logica senza schermo (ricerca, pagina dei risultati, import, impostazioni) è in file che si compilano anche su Linux.
+- `Package.swift` e `Tests/` — solo per lo sviluppo: provano quella logica su Linux (`swift test` dalla radice).
+- `tools/screen-check` — fa leggere le schermate al compilatore su Linux, prima di pagare un Mac per compilarle.
+- `tools/render_screenshots.js` — fotografa la pagina dei risultati in ogni tema, dall'HTML che l'app produce.
+- `project.yml` — descrizione del progetto Xcode, generato con XcodeGen. La versione dell'app si cambia qui, in un punto solo.
+- `.github/workflows/build.yml` — a ogni pull request e a ogni modifica su `main`, GitHub esegue i controlli su Linux e, solo se passano e solo se serve, compila `Kotoba.ipa` (non firmata) su un Mac.
+  Una pull request in **bozza** (draft) non usa mai il Mac: per compilare l'app premi **Ready for review** nella pagina della pull request, oppure **Run workflow** nella scheda Actions.
 
 ## Installare l'app sul tuo iPhone (Windows + Apple ID gratuito)
 

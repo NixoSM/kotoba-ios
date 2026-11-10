@@ -108,7 +108,11 @@ public enum GlossaryHTML {
         var attrs = ""
         if let data = object["data"] as? [String: Any] {
             for (key, value) in data.sorted(by: { $0.key < $1.key }) {
-                attrs += " data-sc-\(escape(kebab(key)))=\"\(escape("\(value)"))\""
+                // The name goes into the page as written, so it must be a plain
+                // name: "x onclick=…" would otherwise become a second attribute.
+                let name = kebab(key)
+                guard isPlainName(name) else { continue }
+                attrs += " data-sc-\(name)=\"\(escape("\(value)"))\""
             }
         }
         if let lang = object["lang"] as? String { attrs += " lang=\"\(escape(lang))\"" }
@@ -120,8 +124,9 @@ public enum GlossaryHTML {
         if let style = object["style"] as? [String: Any] {
             let css = style.sorted(by: { $0.key < $1.key }).compactMap { key, value -> String? in
                 let v = cssValue(value)
-                guard !v.isEmpty, !v.contains("url(") else { return nil }
-                return "\(kebab(key)):\(v)"
+                let name = kebab(key)
+                guard !v.isEmpty, isPlainName(name), !loadsRemoteContent(v) else { return nil }
+                return "\(name):\(v)"
             }.joined(separator: ";")
             if !css.isEmpty { attrs += " style=\"\(escape(css))\"" }
         }
@@ -135,6 +140,55 @@ public enum GlossaryHTML {
         case let a as [Any]: return a.map(cssValue).joined(separator: " ")
         default: return ""
         }
+    }
+
+    /// Letters, digits, "-" and "_" only: safe as an attribute or CSS property name.
+    static func isPlainName(_ s: String) -> Bool {
+        !s.isEmpty && s.unicodeScalars.allSatisfy {
+            ($0.value >= 0x61 && $0.value <= 0x7A) || ($0.value >= 0x41 && $0.value <= 0x5A)
+                || ($0.value >= 0x30 && $0.value <= 0x39) || $0 == "-" || $0 == "_"
+        }
+    }
+
+    /// True when a piece of CSS would fetch something from outside the app:
+    /// `url(…)` to anything but an embedded `data:` picture, or `image-set(…)`.
+    /// A dictionary has no reason to, and a request per entry shown would tell
+    /// a server which words are being looked up.
+    static func loadsRemoteContent(_ css: String) -> Bool {
+        let text = unescapedCSS(css).lowercased()
+        if text.contains("image-set(") || text.contains("@import") { return true }
+        var rest = Substring(text)
+        while let found = rest.range(of: "url(") {
+            let argument = rest[found.upperBound...].drop { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r" || $0 == "\"" || $0 == "'" }
+            if !argument.hasPrefix("data:") { return true }
+            rest = rest[found.upperBound...]
+        }
+        return false
+    }
+
+    /// CSS with its backslash escapes resolved ("\75 rl(" is "url(" to a browser).
+    private static func unescapedCSS(_ css: String) -> String {
+        guard css.contains("\\") else { return css }
+        var out = ""
+        var i = css.startIndex
+        while i < css.endIndex {
+            let c = css[i]
+            i = css.index(after: i)
+            guard c == "\\", i < css.endIndex else { out.append(c); continue }
+            var hex = ""
+            while i < css.endIndex, hex.count < 6, css[i].isHexDigit {
+                hex.append(css[i])
+                i = css.index(after: i)
+            }
+            if hex.isEmpty {
+                out.append(css[i]) // "\(" is just "("
+                i = css.index(after: i)
+            } else {
+                if let value = UInt32(hex, radix: 16), let scalar = Unicode.Scalar(value) { out.unicodeScalars.append(scalar) }
+                if i < css.endIndex, css[i] == " " { i = css.index(after: i) } // one space ends the escape
+            }
+        }
+        return out
     }
 
     static func kebab(_ s: String) -> String {
@@ -163,11 +217,23 @@ public enum GlossaryHTML {
 
     /// Prefixes every selector of a dictionary stylesheet so it only applies
     /// inside that dictionary's block, the same isolation Yomitan provides.
+    ///
+    /// The result is safe to put inside a `<style>` element: it cannot close
+    /// the element (no "<" survives) and rules that would fetch something from
+    /// the network are left out.
     public static func scopedCSS(_ css: String, scope: String) -> String {
+        scoped(stripComments(css), scope: scope).replacingOccurrences(of: "<", with: "\\3c ")
+    }
+
+    private static func scoped(_ css: String, scope: String) -> String {
         var out = ""
-        var rest = Substring(stripComments(css))
+        var rest = Substring(css)
         while let open = rest.firstIndex(of: "{") {
-            let selector = rest[..<open].trimmingCharacters(in: .whitespacesAndNewlines)
+            var selector = rest[..<open].trimmingCharacters(in: .whitespacesAndNewlines)
+            // "@import …;" and "@charset …;" have no block: drop them, keep the rule after.
+            if let statementEnd = selector.lastIndex(of: ";") {
+                selector = selector[selector.index(after: statementEnd)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            }
             // Find the matching close brace (handles one level of nesting, e.g. @media).
             var depth = 0
             var close = open
@@ -180,8 +246,8 @@ public enum GlossaryHTML {
             guard close > open else { break }
             let body = rest[rest.index(after: open)..<close]
             if selector.hasPrefix("@media") || selector.hasPrefix("@supports") {
-                out += "\(selector){\(scopedCSS(String(body), scope: scope))}"
-            } else if !selector.hasPrefix("@") {
+                out += "\(selector){\(scoped(String(body), scope: scope))}"
+            } else if !selector.hasPrefix("@"), !selector.isEmpty, !loadsRemoteContent(String(body)) {
                 let scoped = selector.split(separator: ",")
                     .map { "\(scope) \($0.trimmingCharacters(in: .whitespacesAndNewlines))" }
                     .joined(separator: ",")

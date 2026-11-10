@@ -1,30 +1,35 @@
 import Foundation
 import Observation
-import UIKit
-#if !KOTOBA_EXTENSION
-import Photos
-#endif
 import KotobaCore
 
 /// Owns the dictionary store and everything the screens share.
+///
+/// Nothing in this file needs a screen or an iPhone, so it is compiled and
+/// tested on Linux too (see Package.swift at the root). What does need the
+/// phone (clipboard, screenshots, staying awake) is in AppModel+Device.swift
+/// and LongWork.swift.
 @MainActor
 @Observable
 final class AppModel {
     private(set) var dictionaries: [InstalledDictionary] = []
     private(set) var importStatus: ImportStatus?
+    /// Title of the dictionary being deleted, while its rows are removed.
+    private(set) var deleting: String?
     var errorMessage: String?
+    /// One alert per launch about a database that cannot be read, not one per search.
+    @ObservationIgnored private var toldAboutReads = false
     /// Short confirmation shown at the bottom of the screen.
     var toast: String?
-    var settings = AppSettings.load() {
+    var settings: AppSettings {
         didSet {
             settings.save()
-            if settings.appearance.theme != oldValue.appearance.theme { Palette.apply(settings.appearance.theme) }
+            if settings.appearance.theme != oldValue.appearance.theme { ThemeStore.shared.apply(settings.appearance.theme) }
             if settings.language != oldValue.language { L10n.apply(settings.language) }
         }
     }
     /// Set from outside (kotoba://search?q=…, camera) to run a search.
     var pendingQuery: String?
-    /// The tab on screen: 0 search, 1 camera, 4 from PC, 2 dictionaries, 3 settings.
+    /// The tab on screen: 0 search, 1 camera, 4 from PC, 5 words, 3 settings.
     var selectedTab = 0
     /// What the camera tab should open with.
     enum CameraRequest: Equatable { case lens, screenshot(String) }
@@ -34,31 +39,50 @@ final class AppModel {
     let scanner = TextScanner()
 
     var isImporting: Bool { if case .running = importStatus { true } else { false } }
+    /// The database is being written: other changes to the dictionaries wait.
+    var isBusy: Bool { isImporting || deleting != nil }
 
     enum ImportStatus: Equatable {
-        case running(title: String, fraction: Double)
-        case finished(title: String, terms: Int)
+        /// `position` of `total` files, counted from 1.
+        case running(title: String, fraction: Double, position: Int, total: Int)
+        case finished(summary: String)
     }
 
-    init() {
+    /// Opens the dictionaries where the app keeps them.
+    convenience init() {
+        var failure: String?
+        var opened: DictionaryStore?
         do {
             #if KOTOBA_EXTENSION
             let folder = SharedStorage.folder
             #else
             let folder = SharedStorage.migrateToSharedFolder()
             #endif
-            store = try DictionaryStore(path: folder.appendingPathComponent(SharedStorage.databaseName).path)
+            opened = try DictionaryStore(path: folder.appendingPathComponent(SharedStorage.databaseName).path)
         } catch {
-            store = nil
-            errorMessage = tr("Impossibile aprire il database: {0}", error)
+            failure = tr("Impossibile aprire il database: {0}", error)
+            Diagnostics.shared.log("Database did not open: \(error)")
         }
-        MediaSchemeHandler.store = store
-        Palette.apply(settings.appearance.theme)
-        L10n.apply(settings.language)
-        refresh()
+        self.init(store: opened, settings: AppSettings.load())
+        errorMessage = failure
         #if !KOTOBA_EXTENSION
         buildMissingReverseIndexes()
         #endif
+    }
+
+    init(store: DictionaryStore?, settings: AppSettings) {
+        self.store = store
+        self.settings = settings
+        MediaLink.store = store
+        // A lookup that cannot read the database answers "nothing found". The
+        // reason goes in the diary, and on screen the first time.
+        store?.onReadError = { [weak self] what, error in
+            guard Diagnostics.shared.logOnce("Database not read (\(what)): \(error)") else { return }
+            Task { @MainActor [weak self] in self?.databaseNotRead(error) }
+        }
+        ThemeStore.shared.apply(settings.appearance.theme)
+        L10n.apply(settings.language)
+        refresh()
     }
 
     private(set) var stylesheets: [String: String] = [:] {
@@ -68,29 +92,29 @@ final class AppModel {
     private(set) var dictionaryCSS = ""
 
     func refresh() {
-        dictionaries = (try? store?.dictionaries()) ?? []
-        stylesheets = store?.stylesheets() ?? [:]
-    }
-
-    /// What a search returns, split by how each headword was found.
-    struct SearchOutcome {
-        var direct: [HeadwordGroup] = []
-        /// Set when Latin input was also valid romaji (taberu → たべる).
-        var romajiReading: String?
-        var byMeaning: [HeadwordGroup] = []
-        /// The text the words were found in, used as the Anki sentence.
-        var sentence = ""
-        /// Latin input is usually a meaning ("run"), so the romaji reading
-        /// (るん) only goes first when it is a common word.
-        var romajiFirst = true
-        /// How long the search took, shown at the bottom of the results.
-        var milliseconds: Int?
-
-        func group(section: String, index: Int) -> HeadwordGroup? {
-            let list = section == "meaning" ? byMeaning : direct
-            return list.indices.contains(index) ? list[index] : nil
+        guard let store else { return }
+        do {
+            dictionaries = try store.dictionaries()
+        } catch {
+            report(tr("Non riesco a leggere l'elenco dei dizionari: {0}", error.localizedDescription), log: "List of dictionaries failed: \(error)")
         }
+        stylesheets = store.stylesheets()
     }
+
+    /// Shows a problem and writes it in the diary.
+    private func databaseNotRead(_ error: Error) {
+        guard !toldAboutReads, errorMessage == nil else { return }
+        toldAboutReads = true
+        errorMessage = tr("La ricerca non riesce a leggere i dizionari: {0}", error.localizedDescription)
+    }
+
+    private func report(_ message: String, log: String) {
+        errorMessage = message
+        Diagnostics.shared.log(log)
+    }
+
+    /// Older name of `SearchResults`, kept for the screens that use it.
+    typealias SearchOutcome = SearchResults
 
     // MARK: Anki
 
@@ -100,17 +124,15 @@ final class AppModel {
             errorMessage = tr("Prima configura la nota Anki in Impostazioni (puoi importarla dal backup di Yomitan).")
             return
         }
-        guard let url = AnkiMobileLink.url(format: format, context: group.miningContext(sentence: sentence)) else {
+        // AnkiMobile opens this address once the note is saved: that, and not
+        // the tap here, is what marks the word as added.
+        guard let url = AnkiMobileLink.url(format: format, context: group.miningContext(sentence: sentence),
+                                           returnURL: MinedLink.returnURL(for: group.minedKey)) else {
             errorMessage = tr("Non riesco a creare il collegamento per AnkiMobile.")
             return
         }
         URLOpener.open(url) { [weak self] opened in
-            guard let self else { return }
-            if opened {
-                self.settings.mined.insert(group.minedKey)
-            } else {
-                self.errorMessage = tr("AnkiMobile non risulta installato.")
-            }
+            if !opened { self?.errorMessage = tr("AnkiMobile non risulta installato.") }
         }
     }
 
@@ -118,6 +140,7 @@ final class AppModel {
         guard url.scheme == "kotoba" else { return }
         switch url.host {
         case "mined":
+            if let key = MinedLink.minedKey(from: url) { settings.markMined(key) }
             toast = tr("Aggiunta ad Anki")
         case "search":
             pendingQuery = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "q" }?.value
@@ -131,8 +154,15 @@ final class AppModel {
 
     /// Applies a Yomitan backup: dictionary order and switches, sort dictionary, Anki note.
     func importYomitanSettings(from url: URL) {
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        // The order and the switches are written in the database, which an
+        // import holds for minutes: this would wait, then fail. And the
+        // dictionaries still on their way could not be put in order yet.
+        guard !isBusy else {
+            errorMessage = tr("Le impostazioni di Yomitan si applicano ai dizionari già importati. Aspetta che Kotoba finisca di scriverli, poi riprova.")
+            return
+        }
+        let opened = PickedFile.open(url)
+        defer { PickedFile.close(url, opened: opened) }
         do {
             let parsed = try YomitanSettings.parse(Data(contentsOf: url))
             var report: [String] = []
@@ -158,108 +188,193 @@ final class AppModel {
                 }
             }
             refresh()
+            Diagnostics.shared.log("Yomitan settings applied")
             errorMessage = report.joined(separator: "\n\n")
         } catch {
-            errorMessage = tr("Non riesco a leggere questo backup di Yomitan: {0}", error.localizedDescription)
+            let reason = error is YomitanSettings.ParseError ? tr("il file non contiene impostazioni di Yomitan") : error.localizedDescription
+            self.report(tr("Non riesco a leggere questo backup di Yomitan: {0}", reason), log: "Yomitan settings failed: \(error)")
         }
     }
 
-    func search(_ text: String) async -> SearchOutcome {
-        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let store, !text.isEmpty else { return SearchOutcome() }
+    // MARK: Search
+
+    /// - Parameter suggestions: also list words that start with the text (the search box).
+    func search(_ text: String, suggestions: Bool = false) async -> SearchResults {
+        guard let store else { return SearchResults() }
         let scanner = scanner
-        let sortDictionary = settings.sortFrequencyDictionary
-        // Your dictionary order, so definitions under a word follow it.
-        let priority = Dictionary(dictionaries.map { ($0.title, $0.priority) }, uniquingKeysWith: { a, _ in a })
-        return await Task.detached(priority: .userInitiated) { () -> SearchOutcome in
-            let started = Date()
-            var outcome = SearchOutcome(sentence: text)
-            if Kana.containsJapanese(text) {
-                outcome.direct = HeadwordGroup.group(scanner.scan(text, in: store).map(\.groupInput), priority: priority)
-                HeadwordGroup.attachMeta(&outcome.direct, from: store, sortDictionary: sortDictionary)
-                outcome.direct = HeadwordGroup.sortedForScan(outcome.direct)
-            } else {
-                // Romaji is one word: "to run" is English, not とるん.
-                if !text.contains(" "), let kana = Romaji.toHiragana(text) {
-                    // Only whole-word matches: "sake" should give 酒, not さ + rest.
-                    let exact = scanner.scan(kana, in: store).filter { $0.matchedLength == kana.count }
-                    if !exact.isEmpty {
-                        outcome.romajiReading = kana
-                        outcome.direct = HeadwordGroup.group(exact.map(\.groupInput), priority: priority)
-                        HeadwordGroup.attachMeta(&outcome.direct, from: store, sortDictionary: sortDictionary)
-                        outcome.direct = HeadwordGroup.sortedForScan(outcome.direct)
-                    }
-                }
-                // A match inside a compound (仕立て → ◎仕立屋 "sarto") shows the compound itself.
-                var meaningInputs: [(entry: TermEntry, matchedText: String, reasons: [Reason])] = []
-                for hit in store.reverseSearch(text, limit: 30) {
-                    if let sub = ReverseSearch.subentry(matching: text, glossaryJSON: hit.entry.glossaryJSON),
-                       sub != hit.entry.expression {
-                        let found = store.entries(matching: sub)
-                        if !found.isEmpty {
-                            meaningInputs += found.map { ($0, text, []) }
-                            continue
-                        }
-                    }
-                    meaningInputs.append((hit.entry, text, []))
-                }
-                outcome.byMeaning = HeadwordGroup.group(meaningInputs, priority: priority)
-                HeadwordGroup.attachMeta(&outcome.byMeaning, from: store, sortDictionary: sortDictionary)
-                let romajiRank = outcome.direct.compactMap(\.sortRank).min()
-                let meaningRank = outcome.byMeaning.prefix(3).compactMap(\.sortRank).min()
-                if !outcome.byMeaning.isEmpty {
-                    switch (romajiRank, meaningRank) {
-                    case let (r?, m?): outcome.romajiFirst = r <= m
-                    case (_?, nil): outcome.romajiFirst = true
-                    default: outcome.romajiFirst = false
-                    }
-                }
-            }
-            outcome.milliseconds = Int(Date().timeIntervalSince(started) * 1000)
-            return outcome
+        let request = SearchEngine.Request(
+            text: text, sortDictionary: settings.sortFrequencyDictionary,
+            // Your dictionary order, so definitions under a word follow it.
+            priority: Dictionary(dictionaries.map { ($0.title, $0.priority) }, uniquingKeysWith: { a, _ in a }),
+            suggest: suggestions)
+        return await Task.detached(priority: .userInitiated) {
+            SearchEngine.run(request, store: store, scanner: scanner)
         }.value
     }
 
     private(set) var reverseIndexStatus: String?
 
+    private func indexStatus(_ text: String?) { reverseIndexStatus = text }
+
     /// Dictionaries imported with version 0.2 have no reverse index yet: build it once.
+    /// Called once, at launch. A second run started while the first is going
+    /// would have its progress line cleared when the first one ends.
     func buildMissingReverseIndexes() {
         guard let store else { return }
         Task.detached(priority: .utility) { [weak self] in
-            try? store.buildMissingReverseIndexes { p in
-                let pct = p.total > 0 ? min(100, p.done * 100 / p.total) : 0
-                Task { @MainActor in self?.reverseIndexStatus = tr("Preparo la ricerca per significato in {0}: {1}%", p.dictionaryTitle, pct) }
+            do {
+                try store.buildMissingReverseIndexes { p in
+                    let pct = p.total > 0 ? min(100, p.done * 100 / p.total) : 0
+                    Task { @MainActor [weak self] in self?.indexStatus(tr("Preparo la ricerca per significato in {0}: {1}%", p.dictionaryTitle, pct)) }
+                }
+                await self?.indexStatus(tr("Preparo la ricerca in kana…"))
+                try store.buildMissingKanaIndexes { p in
+                    let pct = p.total > 0 ? min(100, p.done * 100 / p.total) : 0
+                    Task { @MainActor [weak self] in self?.indexStatus(tr("Preparo la ricerca in kana (イタリアご = いたりあご) in {0}: {1}%", p.dictionaryTitle, pct)) }
+                }
+            } catch {
+                Diagnostics.shared.log("Search indexes not built: \(error)")
             }
-            await MainActor.run { self?.reverseIndexStatus = tr("Preparo la ricerca in kana…") }
-            try? store.buildMissingKanaIndexes { p in
-                let pct = p.total > 0 ? min(100, p.done * 100 / p.total) : 0
-                Task { @MainActor in self?.reverseIndexStatus = tr("Preparo la ricerca in kana (イタリアご = いたりあご) in {0}: {1}%", p.dictionaryTitle, pct) }
-            }
-            await MainActor.run { self?.reverseIndexStatus = nil }
+            // After the last progress message, which travels the same way.
+            Task { @MainActor [weak self] in self?.indexStatus(nil) }
         }
     }
 
-    func importDictionary(from url: URL) {
-        guard let store else { return }
-        importStatus = .running(title: url.deletingPathExtension().lastPathComponent, fraction: 0)
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            do {
-                let installed = try YomitanImporter.importDictionary(at: url, into: store) { p in
-                    Task { @MainActor in self?.importStatus = .running(title: p.dictionaryTitle, fraction: p.fraction) }
-                }
-                await MainActor.run {
-                    self?.importStatus = .finished(title: installed.title, terms: installed.termCount)
-                    self?.refresh()
-                }
-            } catch {
-                await MainActor.run {
-                    self?.importStatus = nil
-                    self?.errorMessage = Self.describe(error)
-                }
-            }
+    // MARK: Import
+
+    private struct QueuedFile: Sendable {
+        let url: URL
+        let opened: Bool
+        var name: String { url.deletingPathExtension().lastPathComponent }
+    }
+
+    private var importQueue: [QueuedFile] = []
+    private var importTotal = 0
+    private var importDone = 0
+    private var imported: [InstalledDictionary] = []
+    private var importFailures: [String] = []
+    private var importInterrupted = false
+    private let importCancel = CancelFlag()
+
+    func importDictionary(from url: URL) { importDictionaries(from: [url]) }
+
+    /// Imports the files one after the other. More can be added while it runs.
+    func importDictionaries(from urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        guard store != nil else {
+            errorMessage = tr("I dizionari non sono disponibili: il database non si è aperto. Chiudi e riapri Kotoba; i dettagli sono in Impostazioni › Diagnostica.")
+            return
         }
+        // A delete holds the database: the import would wait for it, then fail.
+        guard deleting == nil else { return busyNote() }
+        // Permission to read a picked file is asked for now, while the choice is fresh.
+        let files = urls.map { QueuedFile(url: $0, opened: PickedFile.open($0)) }
+        importQueue += files
+        if isImporting {
+            importTotal += files.count
+            if case .running(let title, let fraction, let position, _) = importStatus {
+                importStatus = .running(title: title, fraction: fraction, position: position, total: importTotal)
+            }
+            return
+        }
+        importTotal = files.count
+        importDone = 0
+        imported = []
+        importFailures = []
+        importInterrupted = false
+        importCancel.reset()
+        // The screen stays on; if the app is sent to the background anyway and
+        // iOS is about to stop it, the import is stopped cleanly first.
+        LongWork.begin { [weak self] in
+            self?.importInterrupted = true
+            self?.importCancel.set()
+        }
+        runNextImport()
+    }
+
+    /// Stops after the file being read; nothing of it is kept.
+    func cancelImport() {
+        guard isImporting else { return }
+        importCancel.set()
+    }
+
+    private func runNextImport() {
+        guard let store, !importQueue.isEmpty, !importCancel.isSet else { return finishImports() }
+        let file = importQueue.removeFirst()
+        let position = importDone + 1, total = importTotal
+        importStatus = .running(title: file.name, fraction: 0, position: position, total: total)
+        Diagnostics.shared.log("Import started: \(file.name)")
+        let cancel = importCancel
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let result: Result<InstalledDictionary, Error>
+            do {
+                result = .success(try YomitanImporter.importDictionary(at: file.url, into: store, progress: { p in
+                    Task { @MainActor [weak self] in self?.importProgressed(title: p.dictionaryTitle, fraction: p.fraction, position: position) }
+                }, isCancelled: { cancel.isSet }))
+            } catch {
+                result = .failure(error)
+            }
+            PickedFile.close(file.url, opened: file.opened)
+            await self?.importEnded(file.name, result)
+        }
+    }
+
+    private func importProgressed(title: String, fraction: Double, position: Int) {
+        // A report that arrives after its file has ended must not move the next file's bar.
+        guard case .running = importStatus, position == importDone + 1 else { return }
+        importStatus = .running(title: title, fraction: fraction, position: position, total: importTotal)
+    }
+
+    private func importEnded(_ name: String, _ result: Result<InstalledDictionary, Error>) {
+        importDone += 1
+        switch result {
+        case .success(let dictionary):
+            imported.append(dictionary)
+            Diagnostics.shared.log("Imported \(dictionary.title): \(dictionary.termCount) terms, \(dictionary.metaCount) meta, \(dictionary.kanjiCount) kanji")
+        case .failure(YomitanImportError.cancelled):
+            Diagnostics.shared.log("Import stopped: \(name)")
+        case .failure(let error):
+            importFailures.append("\(name): \(Self.describe(error))")
+            Diagnostics.shared.log("Import failed: \(name): \(error)")
+        }
+        refresh()
+        runNextImport()
+    }
+
+    private func finishImports() {
+        // Files that were waiting when the import was stopped.
+        for file in importQueue { PickedFile.close(file.url, opened: file.opened) }
+        importQueue = []
+        LongWork.end()
+        if imported.count == 1, let one = imported.first {
+            importStatus = .finished(summary: Self.summary(of: one))
+        } else if imported.count > 1 {
+            importStatus = .finished(summary: tr("{0} dizionari importati", imported.count))
+        } else {
+            importStatus = nil
+        }
+        var problems = importFailures
+        if importInterrupted {
+            problems.insert(tr("L'importazione è stata interrotta perché Kotoba è passato in secondo piano. Riprovala tenendo l'app aperta: lo schermo resta acceso da solo."), at: 0)
+        }
+        if !problems.isEmpty { errorMessage = problems.joined(separator: "\n\n") }
+        importTotal = 0
+        importDone = 0
+        importInterrupted = false
+        importCancel.reset()
+    }
+
+    /// What one imported dictionary brought: words, or what it holds instead
+    /// of words (a frequency list has none, and "0 voci" would read as a failure).
+    nonisolated static func summary(of d: InstalledDictionary) -> String {
+        if d.termCount > 0 { return tr("{0}: {1} voci importate", d.title, d.termCount) }
+        if d.kanjiCount > 0 { return tr("{0}: {1} kanji importati", d.title, d.kanjiCount) }
+        if d.metaCount > 0 { return tr("{0}: {1} frequenze e accenti importati", d.title, d.metaCount) }
+        return tr("{0}: {1} voci importate", d.title, 0)
+    }
+
+    func clearImportSummary() {
+        if case .finished = importStatus { importStatus = nil }
     }
 
     nonisolated private static func describe(_ error: Error) -> String {
@@ -267,98 +382,114 @@ final class AppModel {
         case DictionaryStoreError.alreadyInstalled(let title): tr("「{0}」 è già installato.", title)
         case YomitanImportError.missingIndex: tr("Questo file non sembra un dizionario Yomitan (manca index.json).")
         case YomitanImportError.unsupportedFormat(let v): tr("Formato di dizionario {0} non supportato.", v)
+        case YomitanImportError.unreadableZip(let detail):
+            tr("Non riesco a leggere questo file .zip: è rovinato o lo scaricamento non è finito. Scaricalo di nuovo. ({0})", detail)
+        case YomitanFormatError.notAnArray(let file), YomitanFormatError.badRow(let file, _):
+            tr("Il file {0} del dizionario non è nel formato di Yomitan.", file)
         default: tr("Import fallito: {0}", error.localizedDescription)
         }
     }
 
+    // MARK: Dictionaries
+
+    /// The screens switch these controls off meanwhile; if one gets through, it says why nothing happens.
+    private func busyNote() {
+        toast = tr("Aspetta che Kotoba finisca di scrivere i dizionari")
+    }
+
     func setEnabled(_ enabled: Bool, for dictionary: InstalledDictionary) {
-        try? store?.setEnabled(enabled, dictionary: dictionary.id)
+        guard let store else { return }
+        guard !isBusy else { return busyNote() }
+        do {
+            try store.setEnabled(enabled, dictionary: dictionary.id)
+        } catch {
+            report(tr("Non riesco a salvare la modifica a «{0}»: {1}", dictionary.title, error.localizedDescription),
+                   log: "setEnabled failed for \(dictionary.title): \(error)")
+        }
         refresh()
     }
 
     func move(from source: IndexSet, to destination: Int) {
+        guard let store else { return }
+        guard !isBusy else { return busyNote() }
         var ids = dictionaries.map(\.id)
-        ids.move(fromOffsets: source, toOffset: destination)
-        try? store?.reorder(ids)
+        // The same as Array.move(fromOffsets:toOffset:), which only SwiftUI has.
+        let moving = source.sorted().filter { ids.indices.contains($0) }.map { ids[$0] }
+        let insertAt = destination - source.filter { $0 < destination }.count
+        ids.removeAll { moving.contains($0) }
+        ids.insert(contentsOf: moving, at: max(0, min(insertAt, ids.count)))
+        do {
+            try store.reorder(ids)
+        } catch {
+            report(tr("Non riesco a salvare il nuovo ordine: {0}", error.localizedDescription), log: "Reorder failed: \(error)")
+        }
         refresh()
     }
 
+    /// Removes a dictionary. Large ones take seconds, so the work happens
+    /// away from the screen; `deleting` says which one meanwhile.
     func delete(_ dictionary: InstalledDictionary) {
-        try? store?.delete(dictionary: dictionary.id)
-        refresh()
+        guard let store else { return }
+        guard !isBusy else { return busyNote() }
+        deleting = dictionary.title
+        LongWork.begin {}
+        Diagnostics.shared.log("Delete started: \(dictionary.title)")
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var failure: Error?
+            do {
+                try store.delete(dictionary: dictionary.id)
+            } catch {
+                failure = error
+            }
+            await self?.deleteEnded(dictionary, failure: failure)
+        }
     }
 
-    // MARK: Quick lookup (app only)
-
-    #if !KOTOBA_EXTENSION
-    /// Called every time Kotoba comes to the front.
-    func becameActive() {
-        // The share panel may have changed settings (words sent to Anki).
-        let saved = AppSettings.load()
-        if saved != settings { settings = saved }
-        if let action = QuickAction.takePending() {
-            perform(action)
+    private func deleteEnded(_ dictionary: InstalledDictionary, failure: Error?) {
+        deleting = nil
+        LongWork.end()
+        refresh()
+        if let failure {
+            report(tr("Non riesco a eliminare «{0}»: {1}", dictionary.title, failure.localizedDescription),
+                   log: "Delete failed: \(dictionary.title): \(failure)")
             return
         }
-        if settings.clipboardLookup, searchClipboard(force: false) { return }
-        if settings.screenshotLookup { openRecentScreenshot() }
+        Diagnostics.shared.log("Deleted \(dictionary.title)")
+        // Settings that named it would otherwise point at nothing.
+        if settings.collapsedDictionaries.contains(dictionary.title) { settings.collapsedDictionaries.remove(dictionary.title) }
+        if settings.sortFrequencyDictionary == dictionary.title { settings.sortFrequencyDictionary = nil }
+        toast = tr("«{0}» eliminato", dictionary.title)
     }
 
-    func perform(_ action: QuickAction) {
-        switch action {
-        case .clipboard:
-            searchClipboard(force: true)
-        case .lens:
-            cameraRequest = .lens
-            selectedTab = 1
+    // MARK: Diagnostics
+
+    /// What Impostazioni › Diagnostica shows and copies. `device` holds what
+    /// only the phone knows (model, iOS version).
+    func diagnosticsReport(device: [(name: String, value: String)] = []) -> DiagnosticsReport {
+        let info = Bundle.main.infoDictionary
+        var facts: [(name: String, value: String)] = [
+            ("Version", "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"),
+        ]
+        facts += device
+        if let expiry = SigningInfo.current {
+            facts.append(("Signature expires", ISO8601DateFormatter().string(from: expiry)))
+        } else {
+            facts.append(("Signature expires", "unknown (no profile in the app)"))
         }
-    }
-
-    private static let clipboardKey = "lastClipboardChange"
-
-    /// Searches the clipboard if it holds Japanese text copied since last time
-    /// (or always, when asked by a shortcut). Returns whether it searched.
-    @discardableResult
-    func searchClipboard(force: Bool) -> Bool {
-        let board = UIPasteboard.general
-        let defaults = UserDefaults.standard
-        // changeCount can be read without the paste permission prompt.
-        guard force || board.changeCount != defaults.integer(forKey: Self.clipboardKey) else { return false }
-        defaults.set(board.changeCount, forKey: Self.clipboardKey)
-        guard board.hasStrings else {
-            if force { toast = tr("Negli appunti non c'è testo") }
-            return false
+        facts.append(("Storage", SharedStorage.groupID.map { "shared (\($0))" } ?? "private (no App Group: the Share panel opens the app instead)"))
+        let database = SharedStorage.folder.appendingPathComponent(SharedStorage.databaseName).path
+        let size = ["", "-wal"].reduce(0) { total, suffix in
+            total + ((try? FileManager.default.attributesOfItem(atPath: database + suffix)[.size] as? Int) ?? 0)
         }
-        let text = (board.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, text.count <= (force ? 300 : 80), force || Kana.containsJapanese(text) else {
-            if force { toast = tr("Negli appunti non c'è testo") }
-            return false
+        facts.append(("Database", store == nil ? "NOT OPEN" : "\(size / 1_048_576) MB, schema \(DictionaryStore.schemaVersion)"))
+        facts.append(("Dictionaries", "\(dictionaries.count) (\(dictionaries.filter(\.enabled).count) on), \(dictionaries.map(\.termCount).reduce(0, +)) terms"))
+        for d in dictionaries {
+            facts.append(("  \(d.enabled ? "✓" : "–") \(d.title)", "rev. \(d.revision), \(d.termCount) terms, \(d.metaCount) meta, \(d.kanjiCount) kanji"))
         }
-        pendingQuery = text
-        selectedTab = 0
-        toast = tr("Dagli appunti")
-        return true
+        facts.append(("Language", "\(settings.language.rawValue) → \(L10n.current.rawValue)"))
+        facts.append(("Theme", settings.appearance.theme))
+        facts.append(("Anki note", settings.ankiFormat.map { "\($0.model) → \($0.deck), \($0.fields.count) fields" } ?? "not set"))
+        facts.append(("Words in Anki", "\(settings.mined.count)"))
+        return DiagnosticsReport(facts: facts, log: Diagnostics.shared.entries)
     }
-
-    private static let screenshotKey = "lastScreenshotSeen"
-
-    /// Opens a screenshot taken in the last two minutes that you haven't seen in Kotoba yet.
-    func openRecentScreenshot() {
-        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        guard status == .authorized || status == .limited, let asset = Self.latestScreenshot(),
-              let date = asset.creationDate, Date().timeIntervalSince(date) < 120,
-              UserDefaults.standard.string(forKey: Self.screenshotKey) != asset.localIdentifier else { return }
-        UserDefaults.standard.set(asset.localIdentifier, forKey: Self.screenshotKey)
-        cameraRequest = .screenshot(asset.localIdentifier)
-        selectedTab = 1
-    }
-
-    nonisolated static func latestScreenshot() -> PHAsset? {
-        let options = PHFetchOptions()
-        options.predicate = NSPredicate(format: "(mediaSubtypes & %d) != 0", PHAssetMediaSubtype.photoScreenshot.rawValue)
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        options.fetchLimit = 1
-        return PHAsset.fetchAssets(with: .image, options: options).firstObject
-    }
-    #endif
 }

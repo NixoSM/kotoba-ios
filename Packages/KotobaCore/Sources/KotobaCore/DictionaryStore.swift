@@ -1,4 +1,4 @@
-#if canImport(SQLite3)
+#if canImport(SQLite3) || canImport(CSQLite3)
 import Foundation
 
 /// A dictionary installed in the app.
@@ -11,6 +11,8 @@ public struct InstalledDictionary: Identifiable, Hashable, Sendable {
     public var enabled: Bool
     public var termCount: Int
     public var metaCount: Int
+    /// Characters, for a kanji dictionary (KANJIDIC and the like).
+    public var kanjiCount: Int = 0
 }
 
 public enum DictionaryStoreError: Error, Equatable {
@@ -25,7 +27,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     private let lock = NSLock()
     private let path: String
 
-    public static let schemaVersion = 5
+    public static let schemaVersion = 6
 
     /// Pass `":memory:"` for a throwaway store (tests).
     public init(path: String) throws {
@@ -130,6 +132,24 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
             ALTER TABLE dictionaries ADD COLUMN kana_indexed INTEGER NOT NULL DEFAULT 0;
             """)
         }
+        if version < 6 {
+            // v6: kanji dictionaries (kanji_bank files), which used to import as nothing.
+            try db.execute("""
+            CREATE TABLE IF NOT EXISTS kanji (
+                id INTEGER PRIMARY KEY,
+                dict_id INTEGER NOT NULL REFERENCES dictionaries(id) ON DELETE CASCADE,
+                character TEXT NOT NULL,
+                onyomi TEXT NOT NULL,
+                kunyomi TEXT NOT NULL,
+                tags TEXT NOT NULL,
+                meanings BLOB NOT NULL,
+                stats BLOB NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS kanji_character ON kanji(character);
+            CREATE INDEX IF NOT EXISTS kanji_dict ON kanji(dict_id);
+            ALTER TABLE dictionaries ADD COLUMN kanji_count INTEGER NOT NULL DEFAULT 0;
+            """)
+        }
         try db.execute("PRAGMA user_version = \(Self.schemaVersion)")
     }
 
@@ -150,6 +170,24 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         return stmt
     }
 
+    /// Lookups answer "nothing found" when the database cannot be read, so
+    /// that a search never fails halfway. The real reason is told here.
+    /// Called on the thread of the lookup, while the store is busy: it must
+    /// not call the store. Set it once, before the store is used.
+    public var onReadError: (@Sendable (_ what: String, _ error: Error) -> Void)?
+
+    /// Runs a read. An error is reported and the caller keeps what it had.
+    @discardableResult
+    private func read(_ what: String, _ body: () throws -> Void) -> Bool {
+        do {
+            try body()
+            return true
+        } catch {
+            onReadError?(what, error)
+            return false
+        }
+    }
+
     /// Recomputed after any change to the dictionary list.
     private var frequencyDictionaryCache: [String]?
 
@@ -158,12 +196,26 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     public func dictionaries() throws -> [InstalledDictionary] {
         try locked {
             var out: [InstalledDictionary] = []
-            try db.prepare("SELECT id, title, revision, priority, enabled, term_count, meta_count FROM dictionaries ORDER BY priority")
+            try db.prepare("SELECT id, title, revision, priority, enabled, term_count, meta_count, kanji_count FROM dictionaries ORDER BY priority")
                 .rows { r in
                     out.append(InstalledDictionary(id: r.int64(0), title: r.string(1), revision: r.string(2),
                                                    priority: r.int(3), enabled: r.int(4) != 0,
-                                                   termCount: r.int(5), metaCount: r.int(6)))
+                                                   termCount: r.int(5), metaCount: r.int(6), kanjiCount: r.int(7)))
                 }
+            return out
+        }
+    }
+
+    /// What the dictionary says about itself in its index.json: author,
+    /// description, where it comes from.
+    public func index(ofDictionary id: Int64) -> DictionaryIndex? {
+        locked {
+            var out: DictionaryIndex?
+            read("dictionary details") {
+                try db.prepare("SELECT index_json FROM dictionaries WHERE id = ?1").bind(id).rows {
+                    out = try? JSONDecoder().decode(DictionaryIndex.self, from: $0.data(0))
+                }
+            }
             return out
         }
     }
@@ -172,7 +224,9 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     public func stylesheets() -> [String: String] {
         locked {
             var out: [String: String] = [:]
-            try? db.prepare("SELECT title, styles FROM dictionaries WHERE styles != ''").rows { out[$0.string(0)] = $0.string(1) }
+            read("dictionary styles") {
+                try db.prepare("SELECT title, styles FROM dictionaries WHERE styles != ''").rows { out[$0.string(0)] = $0.string(1) }
+            }
             return out
         }
     }
@@ -195,14 +249,27 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         }
     }
 
+    /// Removes a dictionary and everything that came with it. For a large
+    /// one this takes seconds: call it away from the main thread.
     public func delete(dictionary id: Int64) throws {
-        try locked {
-            frequencyDictionaryCache = nil
+        func remove(using db: SQLiteDatabase) throws {
             try db.transaction {
                 try db.prepare("DELETE FROM gloss_fts WHERE rowid IN (SELECT id FROM terms WHERE dict_id = ?1)").bind(id).run()
                 try db.prepare("DELETE FROM dictionaries WHERE id = ?1").bind(id).run()
             }
         }
+        // Like the import, on a connection of its own: searches keep reading
+        // the dictionaries as they were instead of waiting behind the lock.
+        guard path != ":memory:", !path.isEmpty else {
+            return try locked {
+                frequencyDictionaryCache = nil
+                try remove(using: db)
+            }
+        }
+        let own = try SQLiteDatabase(path: path)
+        try own.execute("PRAGMA busy_timeout = 10000; PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL; PRAGMA cache_size = -16000;")
+        try remove(using: own)
+        locked { frequencyDictionaryCache = nil }
     }
 
     // MARK: Import
@@ -216,8 +283,10 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         private let insertMeta: SQLiteStatement
         private let insertFTS: SQLiteStatement
         private let insertMedia: SQLiteStatement
+        private let insertKanji: SQLiteStatement
         public private(set) var termCount = 0
         public private(set) var metaCount = 0
+        public private(set) var kanjiCount = 0
 
         fileprivate init(db: SQLiteDatabase, dictID: Int64) throws {
             self.db = db
@@ -229,6 +298,17 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
             insertMeta = try db.prepare("INSERT INTO term_meta (dict_id, expression, kind, data) VALUES (?1, ?2, ?3, ?4)")
             insertFTS = try db.prepare("INSERT INTO gloss_fts (rowid, text) VALUES (?1, ?2)")
             insertMedia = try db.prepare("INSERT OR REPLACE INTO media (dict_id, path, data) VALUES (?1, ?2, ?3)")
+            insertKanji = try db.prepare("""
+            INSERT INTO kanji (dict_id, character, onyomi, kunyomi, tags, meanings, stats) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            """)
+        }
+
+        public func add(_ kanji: [KanjiEntry]) throws {
+            for k in kanji {
+                try insertKanji.bind(dictID, k.character, k.onyomi.joined(separator: " "), k.kunyomi.joined(separator: " "),
+                                     k.tags.joined(separator: " "), JSONEncoder().encode(k.meanings), JSONEncoder().encode(k.stats)).run()
+            }
+            kanjiCount += kanji.count
         }
 
         public func add(_ terms: [TermEntry]) throws {
@@ -296,10 +376,11 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
 
             let session = try ImportSession(db: db, dictID: id)
             try body(session)
-            try db.prepare("UPDATE dictionaries SET term_count = ?1, meta_count = ?2, reverse_indexed = 1, kana_indexed = 1 WHERE id = ?3")
-                .bind(session.termCount, session.metaCount, id).run()
+            try db.prepare("UPDATE dictionaries SET term_count = ?1, meta_count = ?2, kanji_count = ?3, reverse_indexed = 1, kana_indexed = 1 WHERE id = ?4")
+                .bind(session.termCount, session.metaCount, session.kanjiCount, id).run()
             return InstalledDictionary(id: id, title: index.title, revision: index.revision, priority: priority,
-                                       enabled: true, termCount: session.termCount, metaCount: session.metaCount)
+                                       enabled: true, termCount: session.termCount, metaCount: session.metaCount,
+                                       kanjiCount: session.kanjiCount)
         }
     }
 
@@ -404,13 +485,29 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         guard let match = ReverseSearch.ftsQuery(for: text) else { return [] }
         let query = ReverseSearch.Query(text)
         // 1. Score the matching definitions using the index text alone.
+        //    The 2,000 best candidates must come from dictionaries that are
+        //    switched on: taken from all of them, a large dictionary that is
+        //    switched off could fill the whole list and leave nothing to show.
         let scored: [(id: Int64, score: Int)] = locked {
             var out: [(id: Int64, score: Int)] = []
-            try? cached("SELECT rowid, text FROM gloss_fts WHERE gloss_fts MATCH ?1 ORDER BY bm25(gloss_fts) LIMIT 2000")
-                .bind(match).rows { r in
+            var someDisabled = false
+            read("search by meaning") {
+                try cached("SELECT 1 FROM dictionaries WHERE enabled = 0 LIMIT 1").rows { _ in someDisabled = true }
+            }
+            let sql = someDisabled
+                ? """
+                  SELECT gloss_fts.rowid, gloss_fts.text
+                  FROM gloss_fts JOIN terms t ON t.id = gloss_fts.rowid JOIN dictionaries d ON d.id = t.dict_id
+                  WHERE gloss_fts MATCH ?1 AND d.enabled = 1
+                  ORDER BY bm25(gloss_fts) LIMIT 2000
+                  """
+                : "SELECT rowid, text FROM gloss_fts WHERE gloss_fts MATCH ?1 ORDER BY bm25(gloss_fts) LIMIT 2000"
+            read("search by meaning") {
+                try cached(sql).bind(match).rows { r in
                     let score = ReverseSearch.score(query, indexText: r.string(1))
                     if score > 0 { out.append((r.int64(0), score)) }
                 }
+            }
             return out
         }
         let best = scored.enumerated()
@@ -424,13 +521,15 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         var hits: [ReverseHit] = locked {
             var out: [ReverseHit] = []
             let ids = scores.keys.map(String.init).joined(separator: ",")
-            try? db.prepare("""
-            SELECT \(Self.headerColumns(glossary: false))
-            FROM terms t JOIN dictionaries d ON d.id = t.dict_id
-            WHERE d.enabled = 1 AND t.id IN (\(ids))
-            """).rows { r in
-                let entry = Self.entry(r)
-                out.append(ReverseHit(entry: entry, score: scores[entry.rowID ?? 0] ?? 0, frequencyRank: nil))
+            read("search by meaning") {
+                try db.prepare("""
+                SELECT \(Self.headerColumns(glossary: false))
+                FROM terms t JOIN dictionaries d ON d.id = t.dict_id
+                WHERE d.enabled = 1 AND t.id IN (\(ids))
+                """).rows { r in
+                    let entry = Self.entry(r)
+                    out.append(ReverseHit(entry: entry, score: scores[entry.rowID ?? 0] ?? 0, frequencyRank: nil))
+                }
             }
             return out
         }
@@ -484,6 +583,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
                     out[expression] = occurrenceBased[dictID]! ? -value : value
                 }
             } catch {
+                onReadError?("frequencies", error)
                 return [:]
             }
             return out
@@ -521,6 +621,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
                     }
                 }
             } catch {
+                onReadError?("frequencies and pitch accents", error)
                 return MetaBundle()
             }
             return bundle
@@ -532,12 +633,15 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         locked {
             if let cachedList = frequencyDictionaryCache { return cachedList }
             var out: [String] = []
-            try? db.prepare("""
-            SELECT d.title FROM dictionaries d
-            WHERE d.enabled = 1 AND EXISTS (SELECT 1 FROM term_meta m WHERE m.dict_id = d.id AND m.kind = 'freq')
-            ORDER BY d.priority
-            """).rows { out.append($0.string(0)) }
-            frequencyDictionaryCache = out
+            let done = read("frequency dictionaries") {
+                try db.prepare("""
+                SELECT d.title FROM dictionaries d
+                WHERE d.enabled = 1 AND EXISTS (SELECT 1 FROM term_meta m WHERE m.dict_id = d.id AND m.kind = 'freq')
+                ORDER BY d.priority
+                """).rows { out.append($0.string(0)) }
+            }
+            // A list that could not be read is asked for again next time, not remembered as empty.
+            if done { frequencyDictionaryCache = out }
             return out
         }
     }
@@ -546,9 +650,11 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     public func media(dictionary: String, path: String) -> Data? {
         locked {
             var out: Data?
-            try? db.prepare("""
-            SELECT m.data FROM media m JOIN dictionaries d ON d.id = m.dict_id WHERE d.title = ?1 AND m.path = ?2
-            """).bind(dictionary, path).rows { out = $0.data(0) }
+            read("picture") {
+                try db.prepare("""
+                SELECT m.data FROM media m JOIN dictionaries d ON d.id = m.dict_id WHERE d.title = ?1 AND m.path = ?2
+                """).bind(dictionary, path).rows { out = $0.data(0) }
+            }
             return out
         }
     }
@@ -564,8 +670,10 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         guard !ids.isEmpty else { return entries }
         var glossaries: [Int64: Data] = [:]
         _ = locked {
-            try? db.prepare("SELECT id, glossary FROM terms WHERE id IN (\(ids.map(String.init).joined(separator: ",")))")
-                .rows { glossaries[$0.int64(0)] = $0.data(1) }
+            read("definitions") {
+                try db.prepare("SELECT id, glossary FROM terms WHERE id IN (\(ids.map(String.init).joined(separator: ",")))")
+                    .rows { glossaries[$0.int64(0)] = $0.data(1) }
+            }
         }
         return entries.map { entry in
             guard let id = entry.rowID, let glossary = glossaries[id] else { return entry }
@@ -586,10 +694,92 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
                 ORDER BY d.priority, t.score DESC
                 """).bind(term).rows { out.append(Self.entry($0)) }
             } catch {
+                onReadError?("search", error)
                 return []
             }
             return out
         }
+    }
+
+    // MARK: Kanji
+
+    /// What the kanji dictionaries say about each character, in the order
+    /// asked and, for one character, in dictionary order.
+    public func kanji(_ characters: [String]) -> [KanjiEntry] {
+        guard !characters.isEmpty else { return [] }
+        let found: [KanjiEntry] = locked {
+            var out: [KanjiEntry] = []
+            let placeholders = Array(repeating: "?", count: characters.count).joined(separator: ",")
+            do {
+                let stmt = try db.prepare("""
+                SELECT k.character, k.onyomi, k.kunyomi, k.tags, k.meanings, k.stats, d.title
+                FROM kanji k JOIN dictionaries d ON d.id = k.dict_id
+                WHERE d.enabled = 1 AND k.character IN (\(placeholders))
+                ORDER BY d.priority, k.id
+                """)
+                stmt.bindArray(characters)
+                try stmt.rows { r in
+                    out.append(KanjiEntry(
+                        character: r.string(0), onyomi: Self.split(r.string(1)), kunyomi: Self.split(r.string(2)),
+                        tags: Self.split(r.string(3)),
+                        meanings: (try? JSONDecoder().decode([String].self, from: r.data(4))) ?? [],
+                        stats: (try? JSONDecoder().decode([String: String].self, from: r.data(5))) ?? [:],
+                        dictionary: r.string(6)))
+                }
+            } catch {
+                onReadError?("kanji", error)
+                return []
+            }
+            return out
+        }
+        // SQLite returns them by dictionary; the reader wants them by character.
+        return characters.flatMap { c in found.filter { $0.character == c } }
+    }
+
+    // MARK: Words that start with… (the search box)
+
+    /// Headwords whose spelling or reading starts with `prefix`, shortest
+    /// first, from switched-on dictionaries. A word that is exactly `prefix`
+    /// is left out: `entries(matching:)` finds that one.
+    public func entriesStarting(with prefix: String, limit: Int = 200) -> [TermEntry] {
+        guard !prefix.isEmpty, let end = Self.end(ofPrefix: prefix) else { return [] }
+        let headers: [TermEntry] = locked {
+            var out: [TermEntry] = []
+            // Three walks along three indexes. Definitions are read afterwards,
+            // for the rows that are kept: sorting thousands of them would be slow.
+            let hira = kanaIndexReady ? " UNION SELECT id FROM terms WHERE reading_hira >= ?1 AND reading_hira < ?2" : ""
+            do {
+                try cached("""
+                SELECT \(Self.headerColumns(glossary: false))
+                FROM terms t JOIN dictionaries d ON d.id = t.dict_id
+                WHERE d.enabled = 1 AND t.id IN (
+                    SELECT id FROM terms WHERE expression >= ?1 AND expression < ?2
+                    UNION SELECT id FROM terms WHERE reading >= ?1 AND reading < ?2\(hira))
+                  AND t.expression != ?1 AND t.reading != ?1
+                ORDER BY length(t.expression), d.priority, t.score DESC, t.id
+                LIMIT ?3
+                """).bind(prefix, end, limit).rows { out.append(Self.entry($0)) }
+            } catch {
+                onReadError?("words that start with", error)
+                return []
+            }
+            return out
+        }
+        return loadGlossaries(headers)
+    }
+
+    /// The first string that no longer starts with `prefix`: the prefix with
+    /// its last character moved one step on. Rows between the two start with it.
+    static func end(ofPrefix prefix: String) -> String? {
+        var scalars = Array(prefix.unicodeScalars)
+        while let last = scalars.popLast() {
+            let next = last.value == 0xD7FF ? 0xE000 : last.value + 1
+            if let scalar = Unicode.Scalar(next) {
+                scalars.append(scalar)
+                return String(String.UnicodeScalarView(scalars))
+            }
+        }
+        return nil
     }
 
     /// Columns read by `entry(_:)`, in order.

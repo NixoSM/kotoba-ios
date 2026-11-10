@@ -48,6 +48,32 @@ public struct TermMetaEntry: Hashable, Sendable {
     public var dataJSON: Data
 }
 
+/// One character from a `kanji_bank_N.json` file.
+public struct KanjiEntry: Hashable, Sendable {
+    public var character: String
+    /// Chinese-derived readings, usually in katakana.
+    public var onyomi: [String]
+    /// Native readings, usually in hiragana, with a dot before the okurigana.
+    public var kunyomi: [String]
+    public var tags: [String]
+    public var meanings: [String]
+    /// Extra facts the dictionary gives: stroke count, school grade, JLPT level…
+    public var stats: [String: String]
+    /// Title of the dictionary the entry came from (filled in by the store).
+    public var dictionary: String = ""
+
+    public init(character: String, onyomi: [String], kunyomi: [String], tags: [String], meanings: [String],
+                stats: [String: String] = [:], dictionary: String = "") {
+        self.character = character
+        self.onyomi = onyomi
+        self.kunyomi = kunyomi
+        self.tags = tags
+        self.meanings = meanings
+        self.stats = stats
+        self.dictionary = dictionary
+    }
+}
+
 public enum YomitanFormatError: Error, Equatable {
     case notAnArray(file: String)
     case badRow(file: String, row: Int)
@@ -102,6 +128,29 @@ public enum YomitanParser {
             let payload = row[2]
             let json = try JSONSerialization.data(withJSONObject: [payload])
             return TermMetaEntry(expression: expression, kind: kind, dataJSON: json)
+        }
+    }
+
+    /// Format 3 rows are [character, onyomi, kunyomi, tags, [meanings], {stats}];
+    /// format 1 lists the meanings one after the other instead.
+    public static func kanjiBank(from data: Data, file: String = "kanji_bank") throws -> [KanjiEntry] {
+        let rows = try array(data, file: file)
+        return try rows.enumerated().map { i, raw in
+            guard let row = raw as? [Any], row.count >= 4, let character = row[0] as? String, !character.isEmpty else {
+                throw YomitanFormatError.badRow(file: file, row: i)
+            }
+            var meanings: [String] = []
+            var stats: [String: String] = [:]
+            if row.count > 4, let list = row[4] as? [Any] {
+                meanings = list.compactMap { $0 as? String }
+                if row.count > 5, let facts = row[5] as? [String: Any] {
+                    for (key, value) in facts { stats[key] = (value as? String) ?? "\(value)" }
+                }
+            } else {
+                meanings = row.dropFirst(4).compactMap { $0 as? String }
+            }
+            return KanjiEntry(character: character, onyomi: tags(row[1]), kunyomi: tags(row[2]), tags: tags(row[3]),
+                              meanings: meanings, stats: stats)
         }
     }
 
