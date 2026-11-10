@@ -274,12 +274,18 @@ public enum AnkiMobileLink {
         components.scheme = "anki"
         components.host = "x-callback-url"
         components.path = "/addnote"
-        components.queryItems = items
         // URLComponents leaves "+" and "&"-like characters that AnkiMobile would misread: encode strictly.
+        // Names as well as values: a field called "Word Reading" or 単語 is
+        // part of the name here, and Foundation stops the app on a query
+        // that still holds a space or a non-ASCII letter.
         components.percentEncodedQuery = items.map { item in
-            "\(item.name)=\((item.value ?? "").addingPercentEncoding(withAllowedCharacters: strict) ?? "")"
+            "\(encoded(item.name))=\(encoded(item.value ?? ""))"
         }.joined(separator: "&")
         return components.url
+    }
+
+    private static func encoded(_ text: String) -> String {
+        text.addingPercentEncoding(withAllowedCharacters: strict) ?? ""
     }
 
     private static let strict = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
