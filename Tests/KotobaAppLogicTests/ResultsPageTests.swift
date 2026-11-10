@@ -141,4 +141,15 @@ final class ResultsPageTests: XCTestCase {
         XCTAssertTrue(html.contains(#"<details class="dict closed""#))
         XCTAssertTrue(html.contains(#"<summary class="dict-name">JMdict (English)</summary>"#))
     }
+
+    /// A frequency list for kanji names itself next to its number.
+    func testKanjiFrequenciesAreShownWithTheirList() throws {
+        var entry = KanjiEntry(character: "食", onyomi: ["ショク"], kunyomi: [], tags: [], meanings: ["eat"], dictionary: "KANJIDIC")
+        entry.frequencies = [KanjiFrequency(character: "食", value: "412㋕", dictionary: "Aozora <b>")]
+        var outcome = SearchResults()
+        outcome.kanji = [entry]
+        outcome.kanjiSource = "食"
+        let html = ResultsPage.html(outcome: outcome, query: "食", options: ResultsPage.Options())
+        XCTAssertTrue(html.contains("<span class=\"tag\">Aozora &lt;b&gt; 412㋕</span>"), html)
+    }
 }

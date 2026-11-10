@@ -193,15 +193,29 @@ enum SearchEngine {
 /// The address AnkiMobile opens when a note has really been added. It names
 /// the word, so the tick appears for a note that exists, not for a tap.
 enum MinedLink {
-    static func returnURL(for minedKey: String) -> String {
-        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
-        return "kotoba://mined?k=" + (minedKey.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")
+    /// A code only this copy of Kotoba knows, made once and kept. It travels
+    /// in the address given to AnkiMobile, so that a web page or another app
+    /// opening `kotoba://mined?k=…` cannot tick a word as sent. Kept where the
+    /// share panel reads it too: it sends words to Anki, and the answer comes here.
+    static var code: String {
+        let key = "mined.code"
+        if let saved = SharedStorage.defaults.string(forKey: key), !saved.isEmpty { return saved }
+        let made = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        SharedStorage.defaults.set(made, forKey: key)
+        return made
     }
 
-    /// The word a `kotoba://mined?k=…` address is about.
+    static func returnURL(for minedKey: String) -> String {
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        return "kotoba://mined?c=\(code)&k=" + (minedKey.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")
+    }
+
+    /// The word a `kotoba://mined?c=…&k=…` address is about, when it carries this copy's code.
     static func minedKey(from url: URL) -> String? {
         guard url.scheme == "kotoba", url.host == "mined" else { return nil }
-        let key = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "k" }?.value
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        guard items.first(where: { $0.name == "c" })?.value == code else { return nil }
+        let key = items.first { $0.name == "k" }?.value
         return key.flatMap { $0.isEmpty ? nil : $0 }
     }
 }
