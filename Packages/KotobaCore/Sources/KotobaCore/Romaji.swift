@@ -41,6 +41,36 @@ public enum Romaji {
 
     private static let vowels: Set<Character> = ["a", "i", "u", "e", "o", "y"]
 
+    /// A long vowel written with a macron or a circumflex, and the ways it is
+    /// spelled in kana: ō is おう in 東京, おお in 大阪 and オー in コーヒー.
+    private static let longVowels: [Character: [String]] = [
+        "ā": ["aa", "a-"], "â": ["aa", "a-"],
+        "ī": ["ii", "i-"], "î": ["ii", "i-"],
+        "ū": ["uu", "u-"], "û": ["uu", "u-"],
+        "ē": ["ei", "ee", "e-"], "ê": ["ei", "ee", "e-"],
+        "ō": ["ou", "oo", "o-"], "ô": ["ou", "oo", "o-"],
+    ]
+
+    /// Every kana spelling the input can stand for, likeliest first. One for
+    /// plain romaji; several when long vowels are written with a macron
+    /// ("tōkyō" → とうきょう, とうきょお, …), since the mark does not say which.
+    /// Empty unless the whole input is valid romaji.
+    public static func readings(_ input: String) -> [String] {
+        var spellings = [""]
+        for c in input.lowercased().precomposedStringWithCanonicalMapping {
+            if let options = longVowels[c] {
+                spellings = Array(spellings.flatMap { s in options.map { s + $0 } }.prefix(27))
+            } else {
+                spellings = spellings.map { $0 + String(c) }
+            }
+        }
+        var out: [String] = []
+        for spelling in spellings {
+            if let kana = toHiragana(spelling), !out.contains(kana) { out.append(kana) }
+        }
+        return out
+    }
+
     /// Returns nil unless the whole input is valid romaji.
     public static func toHiragana(_ input: String) -> String? {
         let chars = Array(input.lowercased().filter { !$0.isWhitespace })
@@ -49,6 +79,12 @@ public enum Romaji {
         var i = 0
         while i < chars.count {
             let c = chars[i]
+            // Older Hepburn writes ん as m before b, p and m: shimbun, sampo, gemmai.
+            if c == "m", i + 1 < chars.count, chars[i + 1] == "b" || chars[i + 1] == "p" || chars[i + 1] == "m" {
+                out += "ん"
+                i += 1
+                continue
+            }
             // Doubled consonant → small っ (kk, tt, tch...).
             if i + 1 < chars.count, c.isLetter, !vowels.contains(c), c != "n",
                chars[i + 1] == c || (c == "t" && chars[i + 1] == "c") {

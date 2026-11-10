@@ -31,6 +31,15 @@ extension Reason {
         case .negativeTe: tr("negativo ないで")
         case .nakereba: tr("obbligo なきゃ")
         case .zu: tr("negativo ず")
+        case .whileDoing: tr("mentre")
+        case .easyTo: tr("facile da やすい")
+        case .hardTo: tr("difficile da")
+        case .wayOf: tr("modo di 方")
+        case .politeImperative: tr("imperativo なさい")
+        case .showsWant: tr("desiderio altrui たがる")
+        case .nu: tr("negativo ぬ・ん")
+        case .negativeVolitional: tr("volitivo negativo まい")
+        case .neba: tr("obbligo ねば")
         }
     }
 }

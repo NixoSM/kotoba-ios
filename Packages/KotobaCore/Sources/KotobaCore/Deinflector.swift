@@ -19,6 +19,9 @@ public struct WordClass: OptionSet, Hashable, Sendable {
     public static let ta      = WordClass(rawValue: 1 << 6)
     public static let masu    = WordClass(rawValue: 1 << 7)
     public static let surface = WordClass(rawValue: 1 << 8)
+    /// The form ます attaches to (連用形): 書き, 食べ. Endings such as ながら,
+    /// やすい and 方 lead back to it, and it leads back to the verb.
+    public static let stem    = WordClass(rawValue: 1 << 9)
 
     /// Classes that can match a dictionary entry's part of speech.
     public static let partsOfSpeech: WordClass = [.v1, .v5, .vk, .vs, .adjI]
@@ -52,13 +55,18 @@ public struct InflectionRule: Hashable, Sendable {
     /// The class of the form we get back.
     public let to: WordClass
     public let reason: Reason
+    /// For text exactly as typed: when what is left before the ending is kana
+    /// only, it must be at least this long. Keeps one-kana accidents out
+    /// (ねん is 年, not "does not sleep"), while 寝ん and 食べん still work.
+    public let minKanaStem: Int
 
-    public init(_ inflected: String, _ base: String, from: WordClass, to: WordClass, _ reason: Reason) {
+    public init(_ inflected: String, _ base: String, from: WordClass, to: WordClass, _ reason: Reason, minKanaStem: Int = 0) {
         self.inflected = inflected
         self.base = base
         self.from = from
         self.to = to
         self.reason = reason
+        self.minKanaStem = minKanaStem
     }
 }
 
@@ -68,6 +76,7 @@ public enum Reason: String, Hashable, Sendable, CaseIterable {
     case conditional, tara, tari, potential, passive, causative, volitional, imperative
     case want, stem, progressive, completion, preparation, adverb, noun, seemingness, excess
     case negativeTe, nakereba, zu
+    case whileDoing, easyTo, hardTo, wayOf, politeImperative, showsWant, nu, negativeVolitional, neba
 }
 
 /// A candidate dictionary form, with the chain of steps that produced it.
@@ -109,20 +118,48 @@ public struct Deinflector: Sendable {
             let current = results[i]
             i += 1
             let chars = Array(current.term)
-            for length in stride(from: min(maxSuffixLength, chars.count), through: 1, by: -1) {
+            let isRaw = current.wordClass.isEmpty
+            // Down to length 0: the stem of an ichidan verb is the verb without る,
+            // so the "ending" taken off is empty (食べ → 食べる).
+            for length in stride(from: min(maxSuffixLength, chars.count), through: 0, by: -1) {
                 let suffix = String(chars[(chars.count - length)...])
                 guard let candidates = bySuffixLength[length]?[suffix] else { continue }
-                let stem = String(chars[..<(chars.count - length)])
+                let stemChars = chars[..<(chars.count - length)]
+                if length == 0, !Self.canEndIchidanStem(chars.last) { continue }
+                let stem = String(stemChars)
                 for rule in candidates {
-                    guard current.wordClass.isEmpty || !current.wordClass.isDisjoint(with: rule.from) else { continue }
+                    guard isRaw || !current.wordClass.isDisjoint(with: rule.from) else { continue }
+                    if isRaw, stemChars.count < rule.minKanaStem, stemChars.allSatisfy(Self.isHiragana) { continue }
                     let term = stem + rule.base
                     guard !term.isEmpty, term != current.term || rule.to != current.wordClass else { continue }
                     let key = "\(term)|\(rule.to.rawValue)"
                     guard seen.insert(key).inserted else { continue }
-                    results.append(Deinflection(term: term, wordClass: rule.to, reasons: [rule.reason] + current.reasons))
+                    // "Stem" is worth saying only when it is the whole story:
+                    // 書き is "stem of 書く", 書きながら is just "while".
+                    let reasons = rule.reason == .stem && !current.reasons.isEmpty ? current.reasons : [rule.reason] + current.reasons
+                    results.append(Deinflection(term: term, wordClass: rule.to, reasons: reasons))
                 }
             }
         }
         return results
+    }
+
+    private static func isHiragana(_ c: Character) -> Bool {
+        c.unicodeScalars.allSatisfy { (0x3041...0x309F).contains($0.value) || $0.value == 0x30FC }
+    }
+
+    /// Ichidan stems end in an い-row or え-row kana (起き, 食べ) or, for the
+    /// one-kanji verbs, in the kanji itself (見, 寝, 出).
+    private static let ichidanStemEndings = Set("いきぎしじちぢにひびぴみりえけげせぜてでねへべぺめれ")
+
+    private static func canEndIchidanStem(_ last: Character?) -> Bool {
+        guard let last else { return false }
+        if ichidanStemEndings.contains(last) { return true }
+        return last.unicodeScalars.allSatisfy {
+            switch $0.value {
+            case 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0x3005: return true
+            default: return false
+            }
+        }
     }
 }

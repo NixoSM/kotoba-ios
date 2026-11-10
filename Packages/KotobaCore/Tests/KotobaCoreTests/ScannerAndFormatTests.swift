@@ -36,6 +36,20 @@ final class ScannerAndFormatTests: XCTestCase {
         XCTAssertEqual(eaten.first?.matchedText, "食べなかった")
     }
 
+    /// 食べながら used to stop at 食 (or find nothing at all in kana).
+    func testScannerReadsStemEndingsAsOneWord() throws {
+        let source = MemoryTermSource(try YomitanParser.termBank(from: bank))
+        let scanner = TextScanner()
+        for (text, matched) in [("食べながら歩く", "食べながら"), ("たべながら", "たべながら"), ("食べやすい", "食べやすい"),
+                                ("食べ始める", "食べ"), ("食べ、飲み", "食べ"), ("食べなさい！", "食べなさい")] {
+            let hit = scanner.scan(text, in: source).first
+            XCTAssertEqual(hit?.entry.expression, "食べる", text)
+            XCTAssertEqual(hit?.matchedText, matched, text)
+        }
+        // An exact word still wins over a stem of the same length.
+        XCTAssertEqual(scanner.scan("食べ物", in: source).first?.entry.expression, "食べ物")
+    }
+
     func testScannerRejectsWrongPartOfSpeech() throws {
         // 猫 is a noun, so "猫た" must not be read as a past tense of it.
         let source = MemoryTermSource(try YomitanParser.termBank(from: bank))

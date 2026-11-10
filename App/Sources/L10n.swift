@@ -330,6 +330,15 @@ enum L10n {
         "negativo ないで": ("negative ないで", "否定 ないで"),
         "obbligo なきゃ": ("obligation なきゃ", "義務 なきゃ"),
         "negativo ず": ("negative ず", "否定 ず"),
+        "mentre": ("while", "同時"),
+        "facile da やすい": ("easy to やすい", "容易 やすい"),
+        "difficile da": ("hard to", "困難"),
+        "modo di 方": ("way of 方", "方法 方"),
+        "imperativo なさい": ("command なさい", "命令 なさい"),
+        "desiderio altrui たがる": ("someone else's wish たがる", "希望 たがる"),
+        "negativo ぬ・ん": ("negative ぬ・ん", "否定 ぬ・ん"),
+        "volitivo negativo まい": ("negative volitional まい", "否定意向 まい"),
+        "obbligo ねば": ("obligation ねば", "義務 ねば"),
 
         // From PC (texthooker)
         "Dal PC": ("From PC", "PCから"),
