@@ -11,6 +11,8 @@ public struct InstalledDictionary: Identifiable, Hashable, Sendable {
     public var enabled: Bool
     public var termCount: Int
     public var metaCount: Int
+    /// Characters, for a kanji dictionary (KANJIDIC and the like).
+    public var kanjiCount: Int = 0
 }
 
 public enum DictionaryStoreError: Error, Equatable {
@@ -25,7 +27,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     private let lock = NSLock()
     private let path: String
 
-    public static let schemaVersion = 5
+    public static let schemaVersion = 6
 
     /// Pass `":memory:"` for a throwaway store (tests).
     public init(path: String) throws {
@@ -130,6 +132,24 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
             ALTER TABLE dictionaries ADD COLUMN kana_indexed INTEGER NOT NULL DEFAULT 0;
             """)
         }
+        if version < 6 {
+            // v6: kanji dictionaries (kanji_bank files), which used to import as nothing.
+            try db.execute("""
+            CREATE TABLE IF NOT EXISTS kanji (
+                id INTEGER PRIMARY KEY,
+                dict_id INTEGER NOT NULL REFERENCES dictionaries(id) ON DELETE CASCADE,
+                character TEXT NOT NULL,
+                onyomi TEXT NOT NULL,
+                kunyomi TEXT NOT NULL,
+                tags TEXT NOT NULL,
+                meanings BLOB NOT NULL,
+                stats BLOB NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS kanji_character ON kanji(character);
+            CREATE INDEX IF NOT EXISTS kanji_dict ON kanji(dict_id);
+            ALTER TABLE dictionaries ADD COLUMN kanji_count INTEGER NOT NULL DEFAULT 0;
+            """)
+        }
         try db.execute("PRAGMA user_version = \(Self.schemaVersion)")
     }
 
@@ -158,12 +178,24 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     public func dictionaries() throws -> [InstalledDictionary] {
         try locked {
             var out: [InstalledDictionary] = []
-            try db.prepare("SELECT id, title, revision, priority, enabled, term_count, meta_count FROM dictionaries ORDER BY priority")
+            try db.prepare("SELECT id, title, revision, priority, enabled, term_count, meta_count, kanji_count FROM dictionaries ORDER BY priority")
                 .rows { r in
                     out.append(InstalledDictionary(id: r.int64(0), title: r.string(1), revision: r.string(2),
                                                    priority: r.int(3), enabled: r.int(4) != 0,
-                                                   termCount: r.int(5), metaCount: r.int(6)))
+                                                   termCount: r.int(5), metaCount: r.int(6), kanjiCount: r.int(7)))
                 }
+            return out
+        }
+    }
+
+    /// What the dictionary says about itself in its index.json: author,
+    /// description, where it comes from.
+    public func index(ofDictionary id: Int64) -> DictionaryIndex? {
+        locked {
+            var out: DictionaryIndex?
+            try? db.prepare("SELECT index_json FROM dictionaries WHERE id = ?1").bind(id).rows {
+                out = try? JSONDecoder().decode(DictionaryIndex.self, from: $0.data(0))
+            }
             return out
         }
     }
@@ -195,14 +227,27 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         }
     }
 
+    /// Removes a dictionary and everything that came with it. For a large
+    /// one this takes seconds: call it away from the main thread.
     public func delete(dictionary id: Int64) throws {
-        try locked {
-            frequencyDictionaryCache = nil
+        func remove(using db: SQLiteDatabase) throws {
             try db.transaction {
                 try db.prepare("DELETE FROM gloss_fts WHERE rowid IN (SELECT id FROM terms WHERE dict_id = ?1)").bind(id).run()
                 try db.prepare("DELETE FROM dictionaries WHERE id = ?1").bind(id).run()
             }
         }
+        // Like the import, on a connection of its own: searches keep reading
+        // the dictionaries as they were instead of waiting behind the lock.
+        guard path != ":memory:", !path.isEmpty else {
+            return try locked {
+                frequencyDictionaryCache = nil
+                try remove(using: db)
+            }
+        }
+        let own = try SQLiteDatabase(path: path)
+        try own.execute("PRAGMA busy_timeout = 10000; PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL; PRAGMA cache_size = -16000;")
+        try remove(using: own)
+        locked { frequencyDictionaryCache = nil }
     }
 
     // MARK: Import
@@ -216,8 +261,10 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         private let insertMeta: SQLiteStatement
         private let insertFTS: SQLiteStatement
         private let insertMedia: SQLiteStatement
+        private let insertKanji: SQLiteStatement
         public private(set) var termCount = 0
         public private(set) var metaCount = 0
+        public private(set) var kanjiCount = 0
 
         fileprivate init(db: SQLiteDatabase, dictID: Int64) throws {
             self.db = db
@@ -229,6 +276,17 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
             insertMeta = try db.prepare("INSERT INTO term_meta (dict_id, expression, kind, data) VALUES (?1, ?2, ?3, ?4)")
             insertFTS = try db.prepare("INSERT INTO gloss_fts (rowid, text) VALUES (?1, ?2)")
             insertMedia = try db.prepare("INSERT OR REPLACE INTO media (dict_id, path, data) VALUES (?1, ?2, ?3)")
+            insertKanji = try db.prepare("""
+            INSERT INTO kanji (dict_id, character, onyomi, kunyomi, tags, meanings, stats) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            """)
+        }
+
+        public func add(_ kanji: [KanjiEntry]) throws {
+            for k in kanji {
+                try insertKanji.bind(dictID, k.character, k.onyomi.joined(separator: " "), k.kunyomi.joined(separator: " "),
+                                     k.tags.joined(separator: " "), JSONEncoder().encode(k.meanings), JSONEncoder().encode(k.stats)).run()
+            }
+            kanjiCount += kanji.count
         }
 
         public func add(_ terms: [TermEntry]) throws {
@@ -296,10 +354,11 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
 
             let session = try ImportSession(db: db, dictID: id)
             try body(session)
-            try db.prepare("UPDATE dictionaries SET term_count = ?1, meta_count = ?2, reverse_indexed = 1, kana_indexed = 1 WHERE id = ?3")
-                .bind(session.termCount, session.metaCount, id).run()
+            try db.prepare("UPDATE dictionaries SET term_count = ?1, meta_count = ?2, kanji_count = ?3, reverse_indexed = 1, kana_indexed = 1 WHERE id = ?4")
+                .bind(session.termCount, session.metaCount, session.kanjiCount, id).run()
             return InstalledDictionary(id: id, title: index.title, revision: index.revision, priority: priority,
-                                       enabled: true, termCount: session.termCount, metaCount: session.metaCount)
+                                       enabled: true, termCount: session.termCount, metaCount: session.metaCount,
+                                       kanjiCount: session.kanjiCount)
         }
     }
 
@@ -603,6 +662,40 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
             }
             return out
         }
+    }
+
+    // MARK: Kanji
+
+    /// What the kanji dictionaries say about each character, in the order
+    /// asked and, for one character, in dictionary order.
+    public func kanji(_ characters: [String]) -> [KanjiEntry] {
+        guard !characters.isEmpty else { return [] }
+        let found: [KanjiEntry] = locked {
+            var out: [KanjiEntry] = []
+            let placeholders = Array(repeating: "?", count: characters.count).joined(separator: ",")
+            do {
+                let stmt = try db.prepare("""
+                SELECT k.character, k.onyomi, k.kunyomi, k.tags, k.meanings, k.stats, d.title
+                FROM kanji k JOIN dictionaries d ON d.id = k.dict_id
+                WHERE d.enabled = 1 AND k.character IN (\(placeholders))
+                ORDER BY d.priority, k.id
+                """)
+                stmt.bindArray(characters)
+                try stmt.rows { r in
+                    out.append(KanjiEntry(
+                        character: r.string(0), onyomi: Self.split(r.string(1)), kunyomi: Self.split(r.string(2)),
+                        tags: Self.split(r.string(3)),
+                        meanings: (try? JSONDecoder().decode([String].self, from: r.data(4))) ?? [],
+                        stats: (try? JSONDecoder().decode([String: String].self, from: r.data(5))) ?? [:],
+                        dictionary: r.string(6)))
+                }
+            } catch {
+                return []
+            }
+            return out
+        }
+        // SQLite returns them by dictionary; the reader wants them by character.
+        return characters.flatMap { c in found.filter { $0.character == c } }
     }
 
     // MARK: Words that start with… (the search box)

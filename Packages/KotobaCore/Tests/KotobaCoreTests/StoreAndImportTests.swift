@@ -189,6 +189,95 @@ final class StoreAndImportTests: XCTestCase {
         XCTAssertEqual(try YomitanImporter.importDictionary(at: try makeZip(title: "Stop", files: files), into: store).termCount, 3)
     }
 
+    /// A kanji dictionary (KANJIDIC) has kanji_bank files and no term banks:
+    /// it used to import as an empty dictionary.
+    func testKanjiDictionary() throws {
+        let store = try DictionaryStore(path: ":memory:")
+        let files = [
+            "kanji_bank_1.json": #"[["食","ショク ジキ","く.う た.べる","jouyou",["eat","food"],{"strokes":"9","grade":2}],["猫","ビョウ","ねこ","jouyou",["cat"],{}]]"#,
+            "kanji_meta_bank_1.json": #"[["食","freq",300]]"#,
+        ]
+        let installed = try YomitanImporter.importDictionary(at: try makeZip(title: "KANJIDIC", files: files), into: store)
+        XCTAssertEqual(installed.kanjiCount, 2)
+        XCTAssertEqual(installed.termCount, 0)
+        XCTAssertEqual(try store.dictionaries().first?.kanjiCount, 2)
+
+        let found = store.kanji(["猫", "食", "犬"])
+        XCTAssertEqual(found.map(\.character), ["猫", "食"], "in the order asked; unknown ones left out")
+        XCTAssertEqual(found[1].onyomi, ["ショク", "ジキ"])
+        XCTAssertEqual(found[1].kunyomi, ["く.う", "た.べる"])
+        XCTAssertEqual(found[1].meanings, ["eat", "food"])
+        XCTAssertEqual(found[1].stats["strokes"], "9")
+        XCTAssertEqual(found[1].stats["grade"], "2")
+        XCTAssertEqual(found[1].dictionary, "KANJIDIC")
+
+        try store.setEnabled(false, dictionary: installed.id)
+        XCTAssertTrue(store.kanji(["食"]).isEmpty)
+        try store.delete(dictionary: installed.id)
+        try store.setEnabled(true, dictionary: installed.id)
+        XCTAssertTrue(store.kanji(["食"]).isEmpty)
+    }
+
+    func testOldKanjiFormatAndDictionaryIndex() throws {
+        let old = try YomitanParser.kanjiBank(from: Data(#"[["食","ショク","た.べる","jouyou","eat","food"]]"#.utf8))
+        XCTAssertEqual(old.first?.meanings, ["eat", "food"])
+        XCTAssertThrowsError(try YomitanParser.kanjiBank(from: Data(#"[["食"]]"#.utf8)))
+
+        let store = try DictionaryStore(path: ":memory:")
+        let index = try YomitanParser.index(from: Data(#"{"title":"JMdict","revision":"2026","format":3,"author":"EDRDG","description":"Japanese to English","url":"https://example.org"}"#.utf8))
+        let installed = try store.install(index: index) { _ in }
+        XCTAssertEqual(store.index(ofDictionary: installed.id)?.author, "EDRDG")
+        XCTAssertEqual(store.index(ofDictionary: installed.id)?.description, "Japanese to English")
+        XCTAssertNil(store.index(ofDictionary: 999))
+    }
+
+    /// A database written by the version before kanji support opens and gains the new table.
+    func testDatabaseFromVersion5IsUpgraded() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let path = folder.appendingPathComponent("old.sqlite").path
+        do {
+            let store = try DictionaryStore(path: path)
+            _ = try YomitanImporter.importDictionary(at: try makeZip(title: "A", files: jmdict), into: store)
+        }
+        // Undo what version 6 added, as if the file had been written by version 5.
+        do {
+            let db = try SQLiteDatabase(path: path)
+            try db.execute("DROP TABLE kanji; ALTER TABLE dictionaries DROP COLUMN kanji_count; PRAGMA user_version = 5;")
+        }
+        let store = try DictionaryStore(path: path)
+        XCTAssertEqual(try store.dictionaries().map(\.title), ["A"])
+        XCTAssertEqual(try store.dictionaries().first?.kanjiCount, 0)
+        XCTAssertEqual(store.entries(matching: "猫").count, 1)
+        XCTAssertTrue(store.kanji(["猫"]).isEmpty)
+    }
+
+    /// Deleting works on its own connection, so a search made meanwhile is
+    /// answered at once, and afterwards nothing of the dictionary is left.
+    func testDeleteOnAFileDatabaseLeavesNothingAndDoesNotBlockSearches() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = try DictionaryStore(path: folder.appendingPathComponent("d.sqlite").path)
+        var files = jmdict
+        files["img/a.png"] = "PNG"
+        files["kanji_bank_1.json"] = #"[["猫","ビョウ","ねこ","",["cat"],{}]]"#
+        let a = try YomitanImporter.importDictionary(at: try makeZip(title: "A", files: files), into: store)
+        _ = try YomitanImporter.importDictionary(at: try makeZip(title: "B", files: jmdict), into: store)
+        XCTAssertEqual(store.frequencyDictionaries(), ["A", "B"])
+
+        try store.delete(dictionary: a.id)
+        XCTAssertEqual(try store.dictionaries().map(\.title), ["B"])
+        XCTAssertEqual(store.entries(matching: "猫").map(\.dictionary), ["B"])
+        XCTAssertEqual(store.reverseSearch("cat").map(\.entry.dictionary), ["B"])
+        XCTAssertNil(store.media(dictionary: "A", path: "img/a.png"))
+        XCTAssertTrue(store.kanji(["猫"]).isEmpty)
+        XCTAssertEqual(store.frequencyDictionaries(), ["B"], "the list of frequency dictionaries is worked out again")
+        // The title is free again.
+        XCTAssertNoThrow(try YomitanImporter.importDictionary(at: try makeZip(title: "A", files: jmdict), into: store))
+    }
+
     func testWordsStartingWith() throws {
         let store = try DictionaryStore(path: ":memory:")
         let files = ["term_bank_1.json": """

@@ -44,7 +44,7 @@ public enum YomitanImporter {
                 indexEntry = entry
             } else if path == "styles.css" {
                 stylesEntry = entry
-            } else if isBank(path, prefix: "term_bank_") || isBank(path, prefix: "term_meta_bank_") {
+            } else if isBank(path, prefix: "term_bank_") || isBank(path, prefix: "term_meta_bank_") || isBank(path, prefix: "kanji_bank_") {
                 banks.append(entry)
             } else if isMedia(path) {
                 media.append(entry)
@@ -74,6 +74,8 @@ public enum YomitanImporter {
                 try autoreleasepoolIfAvailable {
                     if isBank(path, prefix: "term_bank_") {
                         try session.add(YomitanParser.termBankWithIndexText(from: data, file: path))
+                    } else if isBank(path, prefix: "kanji_bank_") {
+                        try session.add(YomitanParser.kanjiBank(from: data, file: path))
                     } else {
                         try session.add(YomitanParser.termMetaBank(from: data, file: path))
                     }
