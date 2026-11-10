@@ -38,6 +38,7 @@ enum ResultsPage {
         } else {
             body = outcome.romajiFirst ? direct + starting + meaning : meaning + direct + starting
         }
+        body += kanji(outcome)
         let words = outcome.direct.count + outcome.byMeaning.count
         if let ms = outcome.milliseconds, words > 0 {
             body += "<p class=\"timing\">\(words == 1 ? tr("1 parola · {0} ms", ms) : tr("{0} parole · {1} ms", words, ms))</p>"
@@ -109,6 +110,61 @@ enum ResultsPage {
 
     private static func section(_ text: String) -> String {
         "<h2 class=\"section\">\(GlossaryHTML.escape(text))</h2>"
+    }
+
+    /// The characters of the first word, each in a square of writing paper
+    /// with its readings and meanings beside it. Tapping the square searches
+    /// the character.
+    private static func kanji(_ outcome: SearchResults) -> String {
+        guard !outcome.kanji.isEmpty else { return "" }
+        var html = section(tr("I kanji di «{0}»", outcome.kanjiSource))
+        // More than one kanji dictionary: say whose words these are.
+        let named = Set(outcome.kanji.map(\.dictionary)).count > 1
+        var previous = ""
+        for entry in outcome.kanji {
+            let first = entry.character != previous
+            previous = entry.character
+            html += "<section class=\"kanji\(first ? "" : " more")\">"
+            if first {
+                html += "<a class=\"kanji-glyph\" lang=\"ja\" href=\"kotoba://search?q=\(percent(entry.character))\">\(GlossaryHTML.escape(entry.character))</a>"
+            } else {
+                html += "<span class=\"kanji-glyph blank\"></span>"
+            }
+            html += "<div class=\"kanji-body\">"
+            if named { html += "<div class=\"dict-name\">\(GlossaryHTML.escape(entry.dictionary))</div>" }
+            if !entry.onyomi.isEmpty || !entry.kunyomi.isEmpty {
+                html += "<dl class=\"yomi\" lang=\"ja\">"
+                if !entry.onyomi.isEmpty { html += "<dt>音</dt><dd>\(entry.onyomi.map(reading).joined(separator: "<i></i>"))</dd>" }
+                if !entry.kunyomi.isEmpty { html += "<dt>訓</dt><dd>\(entry.kunyomi.map(reading).joined(separator: "<i></i>"))</dd>" }
+                html += "</dl>"
+            }
+            if !entry.meanings.isEmpty {
+                html += "<p class=\"kanji-meanings\">\(GlossaryHTML.escape(entry.meanings.joined(separator: "; ")))</p>"
+            }
+            let facts = kanjiFacts(entry)
+            if !facts.isEmpty {
+                html += "<div class=\"meta\">" + facts.map { "<span class=\"tag\">\(GlossaryHTML.escape($0))</span>" }.joined() + "</div>"
+            }
+            html += "</div></section>"
+        }
+        return html
+    }
+
+    /// た.べる: what follows the dot is written in kana after the kanji, and is shown paler.
+    private static func reading(_ text: String) -> String {
+        guard let dot = text.firstIndex(of: "."), dot != text.startIndex else { return "<span>\(GlossaryHTML.escape(text))</span>" }
+        let stem = text[..<dot], rest = text[text.index(after: dot)...]
+        return "<span>\(GlossaryHTML.escape(String(stem)))<span class=\"oku\">\(GlossaryHTML.escape(String(rest)))</span></span>"
+    }
+
+    /// Strokes, school year and JLPT level when the dictionary gives them; its other numbers are index entries of printed books.
+    private static func kanjiFacts(_ entry: KanjiEntry) -> [String] {
+        var out: [String] = []
+        if let strokes = entry.stats["strokes"], !strokes.isEmpty { out.append(strokes == "1" ? tr("1 tratto") : tr("{0} tratti", strokes)) }
+        if let grade = entry.stats["grade"], !grade.isEmpty { out.append(tr("classe {0}", grade)) }
+        if let jlpt = entry.stats["jlpt"], !jlpt.isEmpty { out.append("JLPT \(jlpt)") }
+        if let freq = entry.stats["freq"], !freq.isEmpty { out.append(tr("frequenza {0}", freq)) }
+        return out + entry.tags
     }
 
     static func entry(_ g: HeadwordGroup, link: String?, options o: Options) -> String {
@@ -394,6 +450,29 @@ enum ResultsPage {
     .start-reading { color:var(--muted); font-size:.82em; flex:none; }
     .start-gloss { color:var(--muted); font-size:.88em; flex:1; min-width:0; text-align:right;
                    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+    /* A kanji in its square of manuscript paper, readings and meanings beside it. */
+    .kanji { display:flex; gap:16px; padding:14px 0 16px; border-bottom:1px solid var(--rule); }
+    .kanji.more { padding-top:0; margin-top:-4px; }
+    .kanji:last-of-type { border-bottom:none; }
+    .kanji-glyph { flex:none; width:76px; height:76px; box-sizing:border-box; display:flex; align-items:center; justify-content:center;
+                   font-family:var(--head-font); font-weight:700; font-size:52px; line-height:1; color:var(--ink);
+                   border:1px solid var(--rule);
+                   background:linear-gradient(var(--rule), var(--rule)) 50% 0 / 1px 100% no-repeat,
+                              linear-gradient(var(--rule), var(--rule)) 0 50% / 100% 1px no-repeat;
+                   -webkit-tap-highlight-color:transparent; }
+    .kanji-glyph.blank { border-color:transparent; background:none; height:0; }
+    .kanji-body { flex:1; min-width:0; }
+    .yomi { display:grid; grid-template-columns:auto 1fr; gap:3px 10px; margin:0 0 6px; align-items:baseline; }
+    .yomi dt { font:600 10.5px/1 -apple-system; color:var(--shu); border:1px solid color-mix(in srgb, var(--shu) 55%, transparent);
+               border-radius:3px; padding:3px 3px 2px; }
+    .yomi dd { margin:0; }
+    .yomi dd > span { white-space:nowrap; }
+    .yomi dd > i { display:inline-block; width:.9em; }
+    .yomi .oku { color:var(--muted); }
+    .kanji-meanings { margin:0 0 6px; }
+    .kanji .meta { margin:0; }
+
     details.dict.closed > summary { list-style:none; cursor:pointer; }
     details.dict.closed > summary::-webkit-details-marker { display:none; }
     details.dict.closed > summary::after { content:"＋"; color:var(--shu); margin-left:2px; }

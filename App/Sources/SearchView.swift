@@ -18,7 +18,7 @@ struct SearchView: View {
             ZStack {
                 Palette.paper.ignoresSafeArea()
                 if model.dictionaries.isEmpty {
-                    EmptyLibrary()
+                    FirstRun()
                 } else if query.trimmingCharacters(in: .whitespaces).isEmpty {
                     HomeView(onSearch: search)
                 } else if !searching && outcome.isEmpty {
@@ -79,16 +79,19 @@ private struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                HStack(alignment: .top, spacing: 14) {
-                    Rectangle().fill(Palette.shu).frame(width: 4, height: 64)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("言葉").font(.mincho(44, bold: true)).foregroundStyle(Palette.ink)
-                        Text(tr("{0} dizionari · {1} voci", model.dictionaries.filter(\.enabled).count, totalTerms.formatted(.number.notation(.compactName))))
-                            .font(.footnote.monospacedDigit())
-                            .foregroundStyle(Palette.muted)
-                    }
+                Wordmark(subtitle: tr("{0} dizionari · {1} voci", model.dictionaries.filter(\.enabled).count, totalTerms.formatted(.number.notation(.compactName))))
+                    .padding(.top, 12)
+
+                if let warning = SignatureText.warning(expiry: SigningInfo.current) {
+                    Label(warning, systemImage: "clock.badge.exclamationmark")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.ink)
+                        .noticeCard()
                 }
-                .padding(.top, 12)
+                // More files of the same pick are still being imported.
+                if let status = model.importStatus {
+                    ImportStatusRow(status: status).noticeCard()
+                }
 
                 if model.settings.history.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
@@ -161,15 +164,101 @@ private struct NoResults: View {
     }
 }
 
-private struct EmptyLibrary: View {
+/// The name of the app with a line under it, as on the home screen.
+private struct Wordmark: View {
+    let subtitle: String
+
     var body: some View {
-        VStack(spacing: 10) {
-            Text("辞書").font(.mincho(64, bold: true)).foregroundStyle(Palette.rule)
-            Text(tr("Nessun dizionario")).font(.headline).foregroundStyle(Palette.ink)
-            Text(tr("Importa un dizionario Yomitan (.zip) dalla scheda Dizionari."))
-                .font(.subheadline).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
+        HStack(alignment: .top, spacing: 14) {
+            Rectangle().fill(Palette.shu).frame(width: 4, height: 64)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("言葉").font(.mincho(44, bold: true)).foregroundStyle(Palette.ink)
+                Text(subtitle)
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(Palette.muted)
+            }
         }
-        .padding(32)
+    }
+}
+
+private extension View {
+    /// A raised card with a hairline, for things that need a moment of attention.
+    func noticeCard() -> some View {
+        self.padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.raised, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.rule))
+    }
+}
+
+/// The first thing a new user sees: with no dictionary there is nothing to
+/// search, so this screen gets one installed without leaving it.
+private struct FirstRun: View {
+    @Environment(AppModel.self) private var model
+    @State private var pickingFiles = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 26) {
+                Wordmark(subtitle: tr("Per cominciare serve un dizionario"))
+                    .padding(.top, 12)
+
+                if let status = model.importStatus {
+                    ImportStatusRow(status: status).noticeCard()
+                }
+
+                FirstRunStep(numeral: "一", title: tr("Scarica un dizionario"),
+                             text: tr("Kotoba legge i dizionari di Yomitan: file .zip gratuiti che restano sul telefono e funzionano senza rete. Scaricane uno o più, per esempio Jitendex (giapponese–inglese).")) {
+                    Link(destination: DictionarySources.page) {
+                        Label(tr("Apri l'elenco dei dizionari"), systemImage: "safari")
+                    }
+                }
+                FirstRunStep(numeral: "二", title: tr("Importalo qui"),
+                             text: tr("Scegli i file .zip scaricati, anche tutti insieme. Kotoba ne tiene una copia sua: dopo puoi cancellarli dall'app File.")) {
+                    Button { pickingFiles = true } label: {
+                        Label(tr("Scegli i file…"), systemImage: "folder")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.isImporting)
+                    .dictionaryFilePicker(isPresented: $pickingFiles)
+                }
+                FirstRunStep(numeral: "三", title: tr("Usi già Yomitan sul computer?"),
+                             text: tr("Dopo i dizionari, vai in Impostazioni › Importa impostazioni di Yomitan: ordine dei dizionari, aspetto e nota Anki vengono copiati dal tuo backup.")) {
+                    EmptyView()
+                }
+            }
+            .padding(.horizontal, 22)
+            .padding(.bottom, 120)
+        }
+    }
+}
+
+private struct FirstRunStep<Action: View>: View {
+    let numeral: String
+    let title: String
+    let text: String
+    let action: Action
+
+    init(numeral: String, title: String, text: String, @ViewBuilder action: () -> Action) {
+        self.numeral = numeral
+        self.title = title
+        self.text = text
+        self.action = action()
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Text(numeral)
+                .font(.mincho(24, bold: true))
+                .foregroundStyle(Palette.shu)
+                .frame(width: 30, alignment: .leading)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title).font(.headline).foregroundStyle(Palette.ink)
+                Text(text).font(.subheadline).foregroundStyle(Palette.muted)
+                action.padding(.top, 2)
+            }
+        }
     }
 }
 

@@ -4,6 +4,7 @@
 Called by the `changes` job of .github/workflows/build.yml. It answers:
   app        does this change touch anything that goes into the app?
   ocr        does it touch the camera code (tests that need a Mac)?
+  pages      does it touch what the results page is drawn from (new photographs)?
   tree       the exact source tree, as git names it
   built_run  on main: the earlier run that already built this same tree
              (a merged pull request), so the app is not built twice
@@ -20,7 +21,13 @@ import urllib.request
 # Anything that can change the app, its tests, or how they are built.
 APP = re.compile(
     r"^(App/|Extensions/|Packages/|Entitlements/|Tests/|Package\.swift$|project\.yml$|"
-    r"tools/ci_plan\.py$|tools/render_|\.github/workflows/)"
+    r"tools/ci_plan\.py$|tools/render_|tools/screen-check/|\.github/workflows/)"
+)
+# What the results page is drawn from: a change here gets new photographs of it.
+PAGES = re.compile(
+    r"^(App/Sources/(ResultsPage|Appearance|HeadwordGroup|SearchResults)\.swift$|App/Resources/Fonts/|"
+    r"Packages/KotobaCore/Sources/KotobaCore/|Tests/KotobaAppLogicTests/(RenderTests|Fixtures)\.swift$|"
+    r"tools/render_|\.github/workflows/)"
 )
 # The camera reader and its tests: these need Apple's recognizer.
 OCR = re.compile(r"^Packages/KotobaCore/(Sources/KotobaOCR/|Tests/KotobaOCRTests/|Package\.swift$)")
@@ -29,10 +36,11 @@ OCR = re.compile(r"^Packages/KotobaCore/(Sources/KotobaOCR/|Tests/KotobaOCRTests
 def plan(files, full=False):
     """What a change to `files` needs. `None` means "unknown": do everything."""
     if files is None:
-        return {"app": True, "ocr": full}
+        return {"app": True, "ocr": full, "pages": True}
     return {
         "app": any(APP.search(f) for f in files),
         "ocr": full or any(OCR.search(f) for f in files),
+        "pages": any(PAGES.search(f) for f in files),
     }
 
 
@@ -105,6 +113,7 @@ def main():
     outputs = {
         "app": "true" if result["app"] else "false",
         "ocr": "true" if result["ocr"] else "false",
+        "pages": "true" if result["pages"] else "false",
         "tree": tree,
         "built_run": built_run,
     }
@@ -119,18 +128,26 @@ def main():
 
 
 def self_test():
-    assert plan(["README.md", "docs/texthooker.md"]) == {"app": False, "ocr": False}
-    assert plan(["tools/textractor-extension/kotoba_websocket.c"]) == {"app": False, "ocr": False}
-    assert plan(["App/Sources/SearchView.swift"]) == {"app": True, "ocr": False}
-    assert plan(["Packages/KotobaCore/Sources/KotobaCore/Romaji.swift"]) == {"app": True, "ocr": False}
-    assert plan(["Packages/KotobaCore/Sources/KotobaOCR/VerticalOCR.swift"]) == {"app": True, "ocr": True}
-    assert plan(["Packages/KotobaCore/Package.swift"]) == {"app": True, "ocr": True}
-    assert plan(["project.yml"]) == {"app": True, "ocr": False}
-    assert plan([".github/workflows/build.yml"]) == {"app": True, "ocr": False}
-    assert plan(["README.md"], full=True) == {"app": False, "ocr": True}
-    assert plan(None) == {"app": True, "ocr": False}
-    assert plan(None, full=True) == {"app": True, "ocr": True}
-    assert plan([]) == {"app": False, "ocr": False}
+    def check(files, app, ocr, pages, full=False):
+        assert plan(files, full) == {"app": app, "ocr": ocr, "pages": pages}, (files, plan(files, full))
+
+    check(["README.md", "docs/texthooker.md"], False, False, False)
+    check(["tools/textractor-extension/kotoba_websocket.c"], False, False, False)
+    check(["App/Sources/SearchView.swift"], True, False, False)
+    check(["App/Sources/ResultsPage.swift"], True, False, True)
+    check(["App/Resources/Fonts/KleeOne-Regular.ttf"], True, False, True)
+    check(["Packages/KotobaCore/Sources/KotobaCore/Romaji.swift"], True, False, True)
+    check(["Packages/KotobaCore/Sources/KotobaOCR/VerticalOCR.swift"], True, True, False)
+    check(["Packages/KotobaCore/Package.swift"], True, True, False)
+    check(["Tests/KotobaAppLogicTests/AppModelTests.swift"], True, False, False)
+    check(["tools/screen-check/run.sh"], True, False, False)
+    check(["tools/render_screenshots.js"], True, False, True)
+    check(["project.yml"], True, False, False)
+    check([".github/workflows/build.yml"], True, False, True)
+    check(["README.md"], False, True, False, full=True)
+    check(None, True, False, True)
+    check(None, True, True, True, full=True)
+    check([], False, False, False)
     print("ci_plan self-test OK")
 
 

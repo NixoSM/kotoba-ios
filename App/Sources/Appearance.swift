@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import KotobaCore
 
 /// How results look: the same knobs as Yomitan's "Appearance" settings,
@@ -285,5 +286,21 @@ struct ThemePalette: Identifiable, Hashable {
             return ":root{color-scheme:light dark;\(p.light.cssVariables)}@media (prefers-color-scheme: dark){:root{\(p.dark.cssVariables)}}"
         }
         return ":root{color-scheme:\(p.light.dark ? "dark" : "light");\(p.light.cssVariables)}"
+    }
+}
+
+/// The colours in use. `Palette` reads them from here, which tells SwiftUI
+/// which screens used a colour: when the theme changes it repaints those,
+/// instead of the whole app being rebuilt (and losing its place) as before.
+@Observable
+final class ThemeStore: @unchecked Sendable {
+    static let shared = ThemeStore()
+    private(set) var light = ThemePalette.named("washi")
+    private(set) var dark = ThemePalette.named("sumi")
+
+    func apply(_ setting: String) {
+        let pair = ThemePalette.pair(for: setting)
+        if light != pair.light { light = pair.light }
+        if dark != pair.dark { dark = pair.dark }
     }
 }

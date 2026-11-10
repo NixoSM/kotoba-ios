@@ -31,6 +31,7 @@ jobs:
     outputs:
       app: ${{ steps.plan.outputs.app }}
       ocr: ${{ steps.plan.outputs.ocr }}
+      pages: ${{ steps.plan.outputs.pages }}
       tree: ${{ steps.plan.outputs.tree }}
       built_run: ${{ steps.plan.outputs.built_run }}
     steps:
@@ -56,7 +57,9 @@ jobs:
       - name: Check English and Japanese translations
         run: python3 tools/check_translations.py
 
-  # The dictionary engine has no screens in it, so Linux can test it.
+  # Everything Linux can check before a Mac is paid for: the dictionary
+  # engine, the app's logic (search, results page, imports, settings), and a
+  # compiler's look at the screens. The Mac build waits for this job.
   engine:
     needs: changes
     if: needs.changes.outputs.app == 'true'
@@ -68,11 +71,53 @@ jobs:
         run: apt-get update -q && apt-get install -y -q libsqlite3-dev
       - name: Test the dictionary engine
         shell: bash
-        run: swift test --package-path Packages/KotobaCore 2>&1 | tee test.log
+        run: set -o pipefail; swift test --package-path Packages/KotobaCore 2>&1 | tee test.log
       - name: Speed benchmark
         if: always()
         shell: bash
         run: grep -E "^(BENCH|  )" test.log || true
+      # The same run writes the results pages that the next job photographs.
+      - name: Test the app's logic
+        shell: bash
+        env:
+          KOTOBA_RENDER_OUT: pages
+        run: swift test
+      - name: Type-check the screens (stand-ins for SwiftUI, see tools/screen-check)
+        shell: bash
+        run: tools/screen-check/run.sh
+      - uses: actions/upload-artifact@v4
+        if: needs.changes.outputs.pages == 'true'
+        with:
+          name: results-pages-html
+          path: pages/*.html
+          retention-days: 1
+
+  # Photographs of the results page (every theme, the kanji box, the list of
+  # words that start with…), taken in a browser from the app's own HTML.
+  # They are in Artifacts as "results-pages": a look before installing.
+  screenshots:
+    needs: [changes, engine]
+    if: needs.changes.outputs.pages == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: results-pages-html
+          path: pages
+      - name: Install the browser and Japanese fonts
+        run: |
+          # Pinned, like everything else that builds or checks the app.
+          npm install --no-save --no-audit --no-fund playwright@1.63.0
+          npx playwright install --with-deps chromium
+          sudo apt-get install -y -q fonts-noto-cjk
+      - name: Photograph the pages
+        run: node tools/render_screenshots.js pages
+      - uses: actions/upload-artifact@v4
+        with:
+          name: results-pages
+          path: pages/*.png
+          retention-days: 14
 
   # Apple's text recognizer exists only on a Mac. Two minutes of Mac time,
   # so it runs when the camera code changed, or when asked for by hand.

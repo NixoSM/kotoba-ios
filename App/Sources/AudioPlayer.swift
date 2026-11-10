@@ -7,6 +7,8 @@ import Foundation
 final class WordAudio {
     static let shared = WordAudio()
     private var player: AVAudioPlayer?
+    /// Counts the words played, so only the last one gives the sound back.
+    private var turn = 0
     /// JapanesePod101 answers unknown words with this "not available" clip.
     private let missingClipSize = 52288
 
@@ -19,13 +21,31 @@ final class WordAudio {
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
             guard data.count != missingClipSize, data.count > 1000 else { return .notFound }
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
-            try AVAudioSession.sharedInstance().setActive(true)
-            player = try AVAudioPlayer(data: data)
-            player?.play()
+            let session = AVAudioSession.sharedInstance()
+            // Music or a podcast playing in another app is lowered for the
+            // length of the word, not stopped.
+            try session.setCategory(.playback, mode: .default, options: [.duckOthers])
+            try session.setActive(true)
+            let player = try AVAudioPlayer(data: data)
+            self.player = player
+            player.play()
+            turn += 1
+            let mine = turn
+            let length = player.duration
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(length + 0.25))
+                self?.finished(mine)
+            }
             return .played
         } catch {
             return .failed
         }
+    }
+
+    /// The word is over: hand the sound back, so the music returns to full volume.
+    private func finished(_ finishedTurn: Int) {
+        guard finishedTurn == turn, player?.isPlaying != true else { return }
+        player = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 }

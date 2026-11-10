@@ -22,8 +22,13 @@ struct SearchResults {
     /// The words found do not cover everything that was typed, so the list
     /// of words that start with it is the likelier answer and goes first.
     var suggestionsFirst = false
+    /// What the kanji dictionaries say about the characters of the first word
+    /// (or of what was typed, when no word was found).
+    var kanji: [KanjiEntry] = []
+    /// The word those characters come from, for the heading.
+    var kanjiSource = ""
 
-    var isEmpty: Bool { direct.isEmpty && byMeaning.isEmpty && startingWith.isEmpty }
+    var isEmpty: Bool { direct.isEmpty && byMeaning.isEmpty && startingWith.isEmpty && kanji.isEmpty }
 
     func group(section: String, index: Int) -> HeadwordGroup? {
         let list = section == "meaning" ? byMeaning : direct
@@ -116,8 +121,37 @@ enum SearchEngine {
             let covered = outcome.direct.map(\.matchedText.count).max() ?? 0
             outcome.suggestionsFirst = !outcome.startingWith.isEmpty && covered < first.count
         }
+        // The characters of the word at the top, or of the text itself when
+        // it is in no word dictionary (a rare kanji, a name).
+        let top = outcome.romajiFirst ? outcome.direct.first ?? outcome.byMeaning.first : outcome.byMeaning.first ?? outcome.direct.first
+        let source = top?.expression ?? (Kana.containsJapanese(text) ? text : "")
+        let characters = kanjiCharacters(in: source)
+        if !characters.isEmpty {
+            outcome.kanji = store.kanji(characters)
+            outcome.kanjiSource = source
+        }
         outcome.milliseconds = Int(Date().timeIntervalSince(started) * 1000)
         return outcome
+    }
+
+    static let maxKanji = 4
+
+    /// The different kanji of a word, in the order they appear.
+    static func kanjiCharacters(in text: String) -> [String] {
+        var seen: Set<Character> = []
+        var out: [String] = []
+        for character in text {
+            guard let scalar = character.unicodeScalars.first, character.unicodeScalars.count == 1 else { continue }
+            let isKanji: Bool
+            switch scalar.value {
+            case 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0x20000...0x323AF: isKanji = true
+            default: isKanji = false
+            }
+            guard isKanji, seen.insert(character).inserted else { continue }
+            out.append(String(character))
+            if out.count == maxKanji { break }
+        }
+        return out
     }
 
     /// Words that start with any of `prefixes`: the common ones first, then the short ones.

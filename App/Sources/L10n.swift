@@ -62,6 +62,7 @@ enum L10n {
         "Fotocamera": ("Camera", "カメラ"),
         "Dizionari": ("Dictionaries", "辞書"),
         "Impostazioni": ("Settings", "設定"),
+        "Parole": ("Words", "単語帳"),
 
         // Search
         "日本語 · italiano · English · romaji": ("日本語 · English · italiano · romaji", "日本語・英語・イタリア語・ローマ字"),
@@ -78,9 +79,22 @@ enum L10n {
             ("Check that the right dictionaries are on, or try the dictionary form of the word.",
              "辞書が有効になっているか確認するか、辞書形で検索してみてください。"),
         "Nessun dizionario": ("No dictionaries", "辞書がありません"),
-        "Importa un dizionario Yomitan (.zip) dalla scheda Dizionari.":
-            ("Import a Yomitan dictionary (.zip) from the Dictionaries tab.",
-             "「辞書」タブからYomitan形式の辞書（.zip）を読み込んでください。"),
+
+        "Per cominciare serve un dizionario": ("To begin, you need a dictionary", "まず辞書を入れましょう"),
+        "Scarica un dizionario": ("Download a dictionary", "辞書をダウンロード"),
+        "Kotoba legge i dizionari di Yomitan: file .zip gratuiti che restano sul telefono e funzionano senza rete. Scaricane uno o più, per esempio Jitendex (giapponese–inglese).":
+            ("Kotoba reads Yomitan dictionaries: free .zip files that stay on the phone and work offline. Download one or more, for example Jitendex (Japanese–English).",
+             "Kotoba は Yomitan 形式の辞書を使います。無料の .zip ファイルで、端末に保存されオフラインで使えます。Jitendex（和英）などを 1 つ以上ダウンロードしてください。"),
+        "Apri l'elenco dei dizionari": ("Open the list of dictionaries", "辞書の一覧を開く"),
+        "Importalo qui": ("Import it here", "ここに読み込む"),
+        "Scegli i file .zip scaricati, anche tutti insieme. Kotoba ne tiene una copia sua: dopo puoi cancellarli dall'app File.":
+            ("Choose the .zip files you downloaded, all at once if you like. Kotoba keeps its own copy: afterwards you can delete them from the Files app.",
+             "ダウンロードした .zip ファイルを選びます（複数選択可）。Kotoba が自分用にコピーするので、読み込み後は「ファイル」アプリから削除して構いません。"),
+        "Scegli i file…": ("Choose files…", "ファイルを選ぶ…"),
+        "Usi già Yomitan sul computer?": ("Already using Yomitan on your computer?", "パソコンで Yomitan を使っていますか？"),
+        "Dopo i dizionari, vai in Impostazioni › Importa impostazioni di Yomitan: ordine dei dizionari, aspetto e nota Anki vengono copiati dal tuo backup.":
+            ("After the dictionaries, go to Settings › Import Yomitan settings: dictionary order, appearance and your Anki note are copied from your backup.",
+             "辞書を読み込んだあと、「設定」›「Yomitan の設定を読み込む」で、辞書の順番・表示・Anki のノートをバックアップからコピーできます。"),
 
         // Results
         "Letto come {0}": ("Read as {0}", "{0} として"),
@@ -95,6 +109,12 @@ enum L10n {
         "Nessuna registrazione per {0}": ("No recording for {0}", "{0} の音声はありません"),
         "Audio non disponibile (sei online?)": ("Audio unavailable (are you online?)", "音声を再生できません（オフラインかもしれません）"),
 
+        "I kanji di «{0}»": ("Kanji in “{0}”", "「{0}」の漢字"),
+        "1 tratto": ("1 stroke", "1 画"),
+        "{0} tratti": ("{0} strokes", "{0} 画"),
+        "classe {0}": ("grade {0}", "学年 {0}"),
+        "frequenza {0}": ("frequency {0}", "頻度 {0}"),
+
         // Camera
         "Leggi dal mondo reale": ("Read the real world", "身の回りの文字を読む"),
         "Scatta una foto o scegline una. Poi tieni premuto sul testo giapponese, anche verticale, e trascina per selezionare la parola: la definizione appare qui sotto.":
@@ -104,21 +124,54 @@ enum L10n {
         "Dalla libreria": ("From library", "ライブラリから"),
 
         // Dictionaries
-        "{0} voci · {1} frequenze/accenti · rev. {2}": ("{0} entries · {1} frequencies/accents · rev. {2}", "{0} 項目 · 頻度/アクセント {1} · rev. {2}"),
         "Chiuso nei risultati": ("Collapsed in results", "検索結果で折りたたみ"),
         "Apri": ("Expand", "展開"),
         "Chiudi": ("Collapse", "折りたたむ"),
         "Elimina": ("Delete", "削除"),
         "Ordine dei risultati": ("Result order", "表示順"),
-        "Trascina per cambiare l'ordine in cui i dizionari compaiono nei risultati. Scorri verso destra per mostrare un dizionario chiuso nei risultati (si apre toccandone il nome), verso sinistra per eliminarlo.":
-            ("Drag to change the order dictionaries appear in results. Swipe right to show a dictionary collapsed (tap its name to open it), left to delete it.",
-             "ドラッグで検索結果に表示される辞書の順番を変更できます。右にスワイプすると折りたたみ表示（名前をタップで展開）、左にスワイプすると削除します。"),
         "Importa": ("Import", "読み込む"),
         "Importo {0}…": ("Importing {0}…", "{0} を読み込み中…"),
-        "Puoi lasciare l'app aperta: i dizionari grandi richiedono qualche minuto.":
-            ("Keep the app open: large dictionaries take a few minutes.",
-             "アプリを開いたままにしてください。大きな辞書は数分かかります。"),
         "{0}: {1} voci importate": ("{0}: {1} entries imported", "{0}：{1} 項目を読み込みました"),
+
+        "Tieni premuto e trascina per cambiare l'ordine in cui i dizionari compaiono nei risultati. Tocca ⓘ per i dettagli. Scorri verso destra per mostrare un dizionario chiuso nei risultati (si apre toccandone il nome), verso sinistra per eliminarlo.":
+            ("Press and hold, then drag, to change the order dictionaries appear in results. Tap ⓘ for details. Swipe right to show a dictionary collapsed (tap its name to open it), left to delete it.",
+             "長押ししてドラッグすると、検索結果に表示される辞書の順番を変更できます。ⓘ をタップすると詳細を表示します。右にスワイプすると折りたたみ表示（名前をタップで展開）、左にスワイプすると削除します。"),
+        "Dettagli di {0}": ("Details of {0}", "{0} の詳細"),
+        "{0} voci": ("{0} entries", "{0} 項目"),
+        "{0} frequenze/accenti": ("{0} frequencies/accents", "頻度/アクセント {0}"),
+        "{0} kanji": ("{0} kanji", "漢字 {0} 字"),
+        "Elimino «{0}»…": ("Deleting “{0}”…", "「{0}」を削除中…"),
+        "I dizionari grandi richiedono qualche secondo. Intanto puoi continuare a cercare.":
+            ("Large dictionaries take a few seconds. You can keep searching meanwhile.",
+             "大きな辞書は数秒かかります。その間も検索できます。"),
+        "{0} di {1}": ("{0} of {1}", "{0} / {1}"),
+        "Tieni Kotoba aperto: lo schermo resta acceso da solo. I dizionari grandi richiedono qualche minuto.":
+            ("Keep Kotoba open: the screen stays on by itself. Large dictionaries take a few minutes.",
+             "Kotoba を開いたままにしてください。画面は自動的に点灯したままになります。大きな辞書は数分かかります。"),
+        "Interrompi": ("Stop", "中止"),
+        "Kotoba legge i dizionari nel formato di Yomitan: file .zip che scarichi una volta e restano sul telefono. Puoi sceglierne più d'uno insieme.":
+            ("Kotoba reads dictionaries in Yomitan's format: .zip files you download once and that stay on the phone. You can choose several at once.",
+             "Kotoba は Yomitan 形式の辞書を読み込みます。.zip ファイルを一度ダウンロードすれば端末に保存されます。複数まとめて選択できます。"),
+        "Dove trovare i dizionari": ("Where to find dictionaries", "辞書の入手先"),
+        "Non riesco ad aprire i file scelti: {0}": ("Couldn't open the chosen files: {0}", "選択したファイルを開けません：{0}"),
+        "Eliminare «{0}»?": ("Delete “{0}”?", "「{0}」を削除しますか？"),
+        "{0}. Viene tolto dal telefono: per riaverlo dovrai importare di nuovo il suo file.":
+            ("{0}. It is removed from the phone: to get it back you will have to import its file again.",
+             "{0}。端末から削除されます。元に戻すにはファイルをもう一度読み込む必要があります。"),
+        "Usa nelle ricerche": ("Use in searches", "検索に使う"),
+        "Ordina i risultati con le sue frequenze": ("Sort results by its frequencies", "この辞書の頻度で並べ替える"),
+        "Un dizionario chiuso mostra solo il nome sotto la parola: si apre toccandolo. Utile per quelli lunghi, come le enciclopedie.":
+            ("A collapsed dictionary shows only its name under the word: tap it to open. Handy for long ones, such as encyclopedias.",
+             "折りたたんだ辞書は、単語の下に名前だけが表示され、タップで開きます。百科事典のように長い辞書に便利です。"),
+        "Elimina dizionario": ("Delete dictionary", "辞書を削除"),
+        "Autore": ("Author", "作者"),
+        "Lingue": ("Languages", "言語"),
+        "Revisione": ("Revision", "リビジョン"),
+        "Formato": ("Format", "形式"),
+        "Sito del dizionario": ("Dictionary website", "辞書のサイト"),
+        "Informazioni": ("About", "情報"),
+        "{0}: {1} kanji importati": ("{0}: {1} kanji imported", "{0}：漢字 {1} 字を読み込みました"),
+        "{0} dizionari importati": ("{0} dictionaries imported", "{0} 冊の辞書を読み込みました"),
 
         // Settings
         "Aspetto": ("Appearance", "表示"),
@@ -135,14 +188,7 @@ enum L10n {
         "Ordinamento dei risultati": ("Result sorting", "検索結果の並び順"),
         "Dizionario di frequenza": ("Frequency dictionary", "頻度辞書"),
         "Il primo disponibile": ("First available", "最初に見つかったもの"),
-        "Dimentica le parole già minate": ("Forget words already mined", "追加済みの単語をリセット"),
-        "AnkiMobile non permette di controllare i duplicati: Kotoba ricorda da solo le {0} parole che hai già inviato.":
-            ("AnkiMobile can't check for duplicates, so Kotoba remembers the {0} words you've already sent.",
-             "AnkiMobile では重複を確認できないため、Kotoba が送信済みの {0} 語を記憶しています。"),
         "Configura una nota Anki a mano": ("Set up an Anki note manually", "Anki のノートを手動で設定"),
-        "Oppure importa le impostazioni di Yomitan qui sopra: la tua nota viene configurata da sola.":
-            ("Or import your Yomitan settings above: your note is set up automatically.",
-             "または上で Yomitan の設定を読み込むと、ノートが自動で設定されます。"),
         "Mazzo": ("Deck", "デッキ"),
         "Tipo di nota": ("Note type", "ノートタイプ"),
         "Etichette": ("Tags", "タグ"),
@@ -152,11 +198,56 @@ enum L10n {
              "名前は大文字・小文字も含めて AnkiMobile と完全に一致させてください。"),
         "vuoto": ("empty", "空欄"),
         "Campi": ("Fields", "フィールド"),
-        "Segnaposto disponibili:": ("Available markers:", "使用できるマーカー："),
         "Per ora restano vuoti:": ("Left empty for now:", "現在は空欄になるもの："),
         "Audio e immagini non passano tramite il collegamento di AnkiMobile.":
             ("Audio and images can't be sent through the AnkiMobile link.",
              "音声と画像は AnkiMobile へのリンクでは送れません。"),
+
+        "Nessuno: tocca per importarne uno": ("None: tap to import one", "なし：タップして読み込む"),
+        "{0} installati": ("{0} installed", "{0} 冊"),
+        "{0} installati, {1} attivi": ("{0} installed, {1} on", "{0} 冊（有効 {1} 冊）"),
+        "Non configurato": ("Not set up", "未設定"),
+        "Versione": ("Version", "バージョン"),
+        "Firma": ("Signature", "署名"),
+        "Diagnostica": ("Diagnostics", "診断"),
+        "Con un Apple ID gratuito l'app si apre per 7 giorni dall'installazione. Reinstallala con Sideloadly prima della scadenza: dizionari e impostazioni restano.":
+            ("With a free Apple ID the app opens for 7 days after it is installed. Install it again with Sideloadly before then: dictionaries and settings stay.",
+             "無料の Apple ID では、インストールから 7 日間アプリを開けます。期限までに Sideloadly で再インストールしてください。辞書と設定はそのまま残ります。"),
+        "scaduta": ("expired", "期限切れ"),
+        "valida fino al {0}": ("valid until {0}", "{0} まで有効"),
+        "La firma dell'app è scaduta: alla prossima apertura non partirà. Reinstallala con Sideloadly; dizionari e impostazioni restano.":
+            ("The app's signature has expired: it will not open next time. Install it again with Sideloadly; dictionaries and settings stay.",
+             "アプリの署名の期限が切れました。次回は起動できません。Sideloadly で再インストールしてください。辞書と設定はそのまま残ります。"),
+        "La firma dell'app {0}. Reinstallala con Sideloadly per continuare a usarla; dizionari e impostazioni restano.":
+            ("The app's signature {0}. Install it again with Sideloadly to keep using it; dictionaries and settings stay.",
+             "アプリの署名は{0}。引き続き使うには Sideloadly で再インストールしてください。辞書と設定はそのまま残ります。"),
+        "scade oggi": ("expires today", "今日で期限が切れます"),
+        "scade domani": ("expires tomorrow", "明日で期限が切れます"),
+        "scade tra {0} giorni": ("expires in {0} days", "あと {0} 日で期限が切れます"),
+        "Dimentica le parole già inviate": ("Forget the words already sent", "送信済みの単語を忘れる"),
+        "AnkiMobile non permette di controllare i duplicati: Kotoba ricorda da solo le {0} parole che hai già inviato, e le elenca nella scheda Parole.":
+            ("AnkiMobile has no way to check for duplicates: Kotoba itself remembers the {0} words you have sent, and lists them in the Words tab.",
+             "AnkiMobile では重複を確認できないため、送信済みの {0} 語を Kotoba が記憶し、「単語帳」タブに一覧表示します。"),
+        "Rimuovi la nota Anki": ("Remove the Anki note", "Anki のノートを削除"),
+        "Oppure, in Impostazioni, importa le impostazioni di Yomitan: la tua nota viene configurata da sola. Serve AnkiMobile installato su questo iPhone.":
+            ("Or, in Settings, import your Yomitan settings: your note is set up by itself. AnkiMobile must be installed on this iPhone.",
+             "または「設定」で Yomitan の設定を読み込むと、ノートが自動的に設定されます。この iPhone に AnkiMobile が必要です。"),
+        "Dimenticare le {0} parole già inviate?": ("Forget the {0} words already sent?", "送信済みの {0} 語を忘れますか？"),
+        "Dimentica": ("Forget", "忘れる"),
+        "Le note in Anki restano. Kotoba smette solo di segnare queste parole come già aggiunte.":
+            ("The notes in Anki stay. Kotoba only stops marking these words as already added.",
+             "Anki のノートは残ります。Kotoba がこれらの単語を「追加済み」と表示しなくなるだけです。"),
+        "Rimuovere la nota Anki?": ("Remove the Anki note?", "Anki のノートを削除しますか？"),
+        "Mazzo, tipo di nota e campi vengono cancellati da Kotoba; in Anki non cambia nulla. Il pulsante ＋ sparisce dai risultati.":
+            ("Deck, note type and fields are erased from Kotoba; nothing changes in Anki. The ＋ button disappears from results.",
+             "デッキ、ノートタイプ、フィールドの設定が Kotoba から消去されます。Anki 側は何も変わりません。検索結果の ＋ ボタンは表示されなくなります。"),
+        "Aggiungi un campo": ("Add a field", "フィールドを追加"),
+        "Il nome è quello del campo in AnkiMobile; sotto, cosa metterci: tocca {…} per inserire un segnaposto. Scorri un campo verso sinistra per toglierlo.":
+            ("The name is the field's name in AnkiMobile; below it, what goes in: tap {…} to insert a placeholder. Swipe a field left to remove it.",
+             "名前は AnkiMobile のフィールド名、その下は入れる内容です。{…} をタップするとプレースホルダーを挿入できます。フィールドを左にスワイプすると削除します。"),
+        "Campo": ("Field", "フィールド"),
+        "Nome del campo": ("Field name", "フィールド名"),
+        "Inserisci un segnaposto": ("Insert a placeholder", "プレースホルダーを挿入"),
 
         // Appearance
         "Tema": ("Theme", "テーマ"),
@@ -218,6 +309,37 @@ enum L10n {
         "Questo file non sembra un dizionario Yomitan (manca index.json).": ("This file doesn't look like a Yomitan dictionary (index.json is missing).", "Yomitan 形式の辞書ではないようです（index.json がありません）。"),
         "Formato di dizionario {0} non supportato.": ("Dictionary format {0} isn't supported.", "辞書の形式 {0} には対応していません。"),
         "Import fallito: {0}": ("Import failed: {0}", "読み込みに失敗しました：{0}"),
+
+        "L'importazione è stata interrotta perché Kotoba è passato in secondo piano. Riprovala tenendo l'app aperta: lo schermo resta acceso da solo.":
+            ("The import was stopped because Kotoba went to the background. Try again keeping the app open: the screen stays on by itself.",
+             "Kotoba がバックグラウンドに移ったため、読み込みを中止しました。アプリを開いたままもう一度お試しください。画面は自動的に点灯したままになります。"),
+        "Non riesco a leggere l'elenco dei dizionari: {0}": ("Couldn't read the list of dictionaries: {0}", "辞書の一覧を読み込めません：{0}"),
+        "Non riesco a salvare la modifica a «{0}»: {1}": ("Couldn't save the change to “{0}”: {1}", "「{0}」への変更を保存できません：{1}"),
+        "Non riesco a salvare il nuovo ordine: {0}": ("Couldn't save the new order: {0}", "新しい順番を保存できません：{0}"),
+        "Non riesco a eliminare «{0}»: {1}": ("Couldn't delete “{0}”: {1}", "「{0}」を削除できません：{1}"),
+        "«{0}» eliminato": ("“{0}” deleted", "「{0}」を削除しました"),
+
+        // Words
+        "Ordine": ("Order", "並び順"),
+        "Più recenti": ("Newest", "新しい順"),
+        "Nessuna parola corrisponde a «{0}»": ("No word matches “{0}”", "「{0}」に一致する単語はありません"),
+        "{0} parole inviate ad Anki": ("{0} words sent to Anki", "Anki に送った単語：{0} 語"),
+        "Cerca tra le tue parole": ("Search your words", "単語帳を検索"),
+        "Qui si raccolgono le tue parole": ("Your words gather here", "ここに単語が集まります"),
+        "Ogni parola che mandi ad Anki finisce in questo elenco. Prima configura la nota in Impostazioni › Anki.":
+            ("Every word you send to Anki ends up in this list. First set up the note in Settings › Anki.",
+             "Anki に送った単語がこの一覧に入ります。まず「設定」›「Anki」でノートを設定してください。"),
+        "Ogni parola che mandi ad Anki con il pulsante ＋ finisce in questo elenco, in ordine di kana come in un dizionario di carta.":
+            ("Every word you send to Anki with the ＋ button ends up in this list, in kana order as in a paper dictionary.",
+             "＋ ボタンで Anki に送った単語がこの一覧に入り、紙の辞書のように五十音順に並びます。"),
+
+        // Diagnostics
+        "Niente di tutto questo lascia il telefono, se non lo copi tu.": ("None of this leaves the phone unless you copy it.", "自分でコピーしない限り、この情報が端末の外に出ることはありません。"),
+        "Ancora nessun evento.": ("No events yet.", "まだ記録がありません。"),
+        "Diario": ("Log", "ログ"),
+        "Svuota il diario": ("Clear the log", "ログを消去"),
+        "Copiato": ("Copied", "コピーしました"),
+        "Copia": ("Copy", "コピー"),
 
         // Quick lookup
         "Ricerca rapida": ("Quick lookup", "クイック検索"),
@@ -421,7 +543,6 @@ enum L10n {
         "Cancella tutte le righe": ("Delete all lines", "すべての行を削除"),
         "Cancellare tutte le righe ricevute?": ("Delete all received lines?", "受信したすべての行を削除しますか?"),
         "Modifica": ("Edit", "編集"),
-        "Copia": ("Copy", "コピー"),
         "Cerca la riga intera": ("Search the whole line", "行全体を検索"),
         "Ripristina l'originale": ("Restore the original", "元に戻す"),
         "Cancella le letture rimaste attaccate al testo (furigana), i nomi o i simboli in più. Una riga vuota viene eliminata.":

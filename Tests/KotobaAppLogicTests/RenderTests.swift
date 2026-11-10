@@ -37,6 +37,10 @@ final class RenderTests: XCTestCase {
         try write("compact", query: "食べる") { $0.appearance.layout = .compact }
         try write("pitch-graph", query: "食べる") { $0.appearance.pitchGraph = true }
         try write("large-type", query: "食べる") { $0.appearance.fontSize = 24 }
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: out.path).filter { $0.hasSuffix(".html") }.count, ThemePalette.all.count + 7)
+        // Last, so the pages above are as they are without a kanji dictionary.
+        try Fixtures.install("Kanji", kanji: Fixtures.kanji, into: store)
+        try write("kanji", query: "食べ物")
+        try write("kanji-dark", query: "猫") { $0.appearance.theme = "sumi" }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: out.path).filter { $0.hasSuffix(".html") }.count, ThemePalette.all.count + 9)
     }
 }

@@ -1,25 +1,9 @@
 import SwiftUI
 import CoreText
-import Observation
-
-/// The colours in use. `Palette` reads them from here, which tells SwiftUI
-/// which screens used a colour: when the theme changes it repaints those,
-/// instead of the whole app being rebuilt (and losing its place) as before.
-@Observable
-final class ThemeStore: @unchecked Sendable {
-    static let shared = ThemeStore()
-    fileprivate(set) var light = ThemePalette.named("washi")
-    fileprivate(set) var dark = ThemePalette.named("sumi")
-}
 
 /// The app's colours, following the chosen theme.
 enum Palette {
-    static func apply(_ setting: String) {
-        let pair = ThemePalette.pair(for: setting)
-        let store = ThemeStore.shared
-        if store.light != pair.light { store.light = pair.light }
-        if store.dark != pair.dark { store.dark = pair.dark }
-    }
+    static func apply(_ setting: String) { ThemeStore.shared.apply(setting) }
 
     static var paper: Color { color(\.paper) }
     static var raised: Color { color(\.raised) }

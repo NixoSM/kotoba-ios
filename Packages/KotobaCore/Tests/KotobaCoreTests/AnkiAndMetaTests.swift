@@ -2,6 +2,12 @@ import XCTest
 @testable import KotobaCore
 
 final class AnkiAndMetaTests: XCTestCase {
+    /// The field editor offers this list: it must be exactly what can be filled.
+    func testTheListOfPlaceholdersIsComplete() {
+        XCTAssertEqual(Set(AnkiFieldRenderer.supportedMarkers), AnkiFieldRenderer.markerKeys)
+        XCTAssertEqual(AnkiFieldRenderer.supportedMarkers.count, AnkiFieldRenderer.markerKeys.count, "no name twice")
+    }
+
     func testFurigana() {
         XCTAssertEqual(Furigana.ankiPlain(expression: "食べ物", reading: "たべもの"), "食[た]べ 物[もの]")
         XCTAssertEqual(Furigana.ankiPlain(expression: "攻撃", reading: "こうげき"), "攻撃[こうげき]")

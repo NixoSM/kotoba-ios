@@ -97,8 +97,6 @@ struct ResultsWebView: UIViewRepresentable {
 final class MediaSchemeHandler: NSObject, WKURLSchemeHandler {
     static let shared = MediaSchemeHandler()
     static let scheme = MediaLink.scheme
-    /// Set once at launch.
-    nonisolated(unsafe) static var store: DictionaryStore?
 
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         if let url = task.request.url, url.host == "font" {
@@ -118,7 +116,7 @@ final class MediaSchemeHandler: NSObject, WKURLSchemeHandler {
               let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
               let dictionary = items.first(where: { $0.name == "d" })?.value,
               let path = items.first(where: { $0.name == "p" })?.value,
-              let data = Self.store?.media(dictionary: dictionary, path: path) else {
+              let data = MediaLink.store?.media(dictionary: dictionary, path: path) else {
             task.didFailWithError(URLError(.fileDoesNotExist))
             return
         }

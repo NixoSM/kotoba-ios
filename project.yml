@@ -6,6 +6,11 @@ options:
 packages:
   KotobaCore:
     path: Packages/KotobaCore
+# The version, once, for the app and its two extensions (Impostazioni shows it).
+settings:
+  base:
+    MARKETING_VERSION: "0.16.0"
+    CURRENT_PROJECT_VERSION: "16"
 targets:
   Kotoba:
     type: application
@@ -47,8 +52,6 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.nixosm.kotoba
         CODE_SIGN_ENTITLEMENTS: Entitlements/Kotoba.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        MARKETING_VERSION: "0.15.0"
-        CURRENT_PROJECT_VERSION: "15"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.0"
   # "Kotoba" in the Share sheet: select text anywhere → Share → Kotoba.
@@ -64,10 +67,13 @@ targets:
       - App/Sources/AppSettings.swift
       - App/Sources/Appearance.swift
       - App/Sources/AudioPlayer.swift
+      - App/Sources/Diagnostics.swift
       - App/Sources/HeadwordGroup.swift
       - App/Sources/L10n.swift
+      - App/Sources/LongWork.swift
       - App/Sources/MediaLink.swift
       - App/Sources/Palette.swift
+      - App/Sources/PickedFile.swift
       - App/Sources/Reason+Italian.swift
       - App/Sources/ResultsPage.swift
       - App/Sources/ResultsPane.swift
@@ -93,8 +99,6 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.nixosm.kotoba.share
         CODE_SIGN_ENTITLEMENTS: Entitlements/KotobaShare.entitlements
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) KOTOBA_EXTENSION"
-        MARKETING_VERSION: "0.15.0"
-        CURRENT_PROJECT_VERSION: "15"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.0"
   # Control Center and Lock Screen buttons (iOS 18+).
@@ -120,7 +124,5 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nixosm.kotoba.widgets
         CODE_SIGN_ENTITLEMENTS: Entitlements/KotobaWidgets.entitlements
-        MARKETING_VERSION: "0.15.0"
-        CURRENT_PROJECT_VERSION: "15"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.0"

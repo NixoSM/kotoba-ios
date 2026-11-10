@@ -26,9 +26,9 @@ struct KotobaApp: App {
                     .tabItem { Label(tr("Dal PC"), systemImage: "desktopcomputer") }
                     .badge(hooker.unread)
                     .tag(4)
-                DictionariesView()
-                    .tabItem { Label(tr("Dizionari"), systemImage: "books.vertical") }
-                    .tag(2)
+                WordsView()
+                    .tabItem { Label(tr("Parole"), systemImage: "character.book.closed") }
+                    .tag(5)
                 SettingsView()
                     .tabItem { Label(tr("Impostazioni"), systemImage: "slider.horizontal.3") }
                     .tag(3)

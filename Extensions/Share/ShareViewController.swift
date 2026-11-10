@@ -23,6 +23,7 @@ final class ShareViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .clear
         URLOpener.responder = self
+        Diagnostics.shared.source = "share"
         FontCatalog.registerBundledFonts()
     }
 
