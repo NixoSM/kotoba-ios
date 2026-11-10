@@ -170,6 +170,24 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         return stmt
     }
 
+    /// Lookups answer "nothing found" when the database cannot be read, so
+    /// that a search never fails halfway. The real reason is told here.
+    /// Called on the thread of the lookup, while the store is busy: it must
+    /// not call the store. Set it once, before the store is used.
+    public var onReadError: (@Sendable (_ what: String, _ error: Error) -> Void)?
+
+    /// Runs a read. An error is reported and the caller keeps what it had.
+    @discardableResult
+    private func read(_ what: String, _ body: () throws -> Void) -> Bool {
+        do {
+            try body()
+            return true
+        } catch {
+            onReadError?(what, error)
+            return false
+        }
+    }
+
     /// Recomputed after any change to the dictionary list.
     private var frequencyDictionaryCache: [String]?
 
@@ -193,8 +211,10 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     public func index(ofDictionary id: Int64) -> DictionaryIndex? {
         locked {
             var out: DictionaryIndex?
-            try? db.prepare("SELECT index_json FROM dictionaries WHERE id = ?1").bind(id).rows {
-                out = try? JSONDecoder().decode(DictionaryIndex.self, from: $0.data(0))
+            read("dictionary details") {
+                try db.prepare("SELECT index_json FROM dictionaries WHERE id = ?1").bind(id).rows {
+                    out = try? JSONDecoder().decode(DictionaryIndex.self, from: $0.data(0))
+                }
             }
             return out
         }
@@ -204,7 +224,9 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     public func stylesheets() -> [String: String] {
         locked {
             var out: [String: String] = [:]
-            try? db.prepare("SELECT title, styles FROM dictionaries WHERE styles != ''").rows { out[$0.string(0)] = $0.string(1) }
+            read("dictionary styles") {
+                try db.prepare("SELECT title, styles FROM dictionaries WHERE styles != ''").rows { out[$0.string(0)] = $0.string(1) }
+            }
             return out
         }
     }
@@ -469,7 +491,9 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         let scored: [(id: Int64, score: Int)] = locked {
             var out: [(id: Int64, score: Int)] = []
             var someDisabled = false
-            try? cached("SELECT 1 FROM dictionaries WHERE enabled = 0 LIMIT 1").rows { _ in someDisabled = true }
+            read("search by meaning") {
+                try cached("SELECT 1 FROM dictionaries WHERE enabled = 0 LIMIT 1").rows { _ in someDisabled = true }
+            }
             let sql = someDisabled
                 ? """
                   SELECT gloss_fts.rowid, gloss_fts.text
@@ -478,11 +502,12 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
                   ORDER BY bm25(gloss_fts) LIMIT 2000
                   """
                 : "SELECT rowid, text FROM gloss_fts WHERE gloss_fts MATCH ?1 ORDER BY bm25(gloss_fts) LIMIT 2000"
-            try? cached(sql)
-                .bind(match).rows { r in
+            read("search by meaning") {
+                try cached(sql).bind(match).rows { r in
                     let score = ReverseSearch.score(query, indexText: r.string(1))
                     if score > 0 { out.append((r.int64(0), score)) }
                 }
+            }
             return out
         }
         let best = scored.enumerated()
@@ -496,13 +521,15 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         var hits: [ReverseHit] = locked {
             var out: [ReverseHit] = []
             let ids = scores.keys.map(String.init).joined(separator: ",")
-            try? db.prepare("""
-            SELECT \(Self.headerColumns(glossary: false))
-            FROM terms t JOIN dictionaries d ON d.id = t.dict_id
-            WHERE d.enabled = 1 AND t.id IN (\(ids))
-            """).rows { r in
-                let entry = Self.entry(r)
-                out.append(ReverseHit(entry: entry, score: scores[entry.rowID ?? 0] ?? 0, frequencyRank: nil))
+            read("search by meaning") {
+                try db.prepare("""
+                SELECT \(Self.headerColumns(glossary: false))
+                FROM terms t JOIN dictionaries d ON d.id = t.dict_id
+                WHERE d.enabled = 1 AND t.id IN (\(ids))
+                """).rows { r in
+                    let entry = Self.entry(r)
+                    out.append(ReverseHit(entry: entry, score: scores[entry.rowID ?? 0] ?? 0, frequencyRank: nil))
+                }
             }
             return out
         }
@@ -556,6 +583,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
                     out[expression] = occurrenceBased[dictID]! ? -value : value
                 }
             } catch {
+                onReadError?("frequencies", error)
                 return [:]
             }
             return out
@@ -593,6 +621,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
                     }
                 }
             } catch {
+                onReadError?("frequencies and pitch accents", error)
                 return MetaBundle()
             }
             return bundle
@@ -604,12 +633,15 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         locked {
             if let cachedList = frequencyDictionaryCache { return cachedList }
             var out: [String] = []
-            try? db.prepare("""
-            SELECT d.title FROM dictionaries d
-            WHERE d.enabled = 1 AND EXISTS (SELECT 1 FROM term_meta m WHERE m.dict_id = d.id AND m.kind = 'freq')
-            ORDER BY d.priority
-            """).rows { out.append($0.string(0)) }
-            frequencyDictionaryCache = out
+            let done = read("frequency dictionaries") {
+                try db.prepare("""
+                SELECT d.title FROM dictionaries d
+                WHERE d.enabled = 1 AND EXISTS (SELECT 1 FROM term_meta m WHERE m.dict_id = d.id AND m.kind = 'freq')
+                ORDER BY d.priority
+                """).rows { out.append($0.string(0)) }
+            }
+            // A list that could not be read is asked for again next time, not remembered as empty.
+            if done { frequencyDictionaryCache = out }
             return out
         }
     }
@@ -618,9 +650,11 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     public func media(dictionary: String, path: String) -> Data? {
         locked {
             var out: Data?
-            try? db.prepare("""
-            SELECT m.data FROM media m JOIN dictionaries d ON d.id = m.dict_id WHERE d.title = ?1 AND m.path = ?2
-            """).bind(dictionary, path).rows { out = $0.data(0) }
+            read("picture") {
+                try db.prepare("""
+                SELECT m.data FROM media m JOIN dictionaries d ON d.id = m.dict_id WHERE d.title = ?1 AND m.path = ?2
+                """).bind(dictionary, path).rows { out = $0.data(0) }
+            }
             return out
         }
     }
@@ -636,8 +670,10 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         guard !ids.isEmpty else { return entries }
         var glossaries: [Int64: Data] = [:]
         _ = locked {
-            try? db.prepare("SELECT id, glossary FROM terms WHERE id IN (\(ids.map(String.init).joined(separator: ",")))")
-                .rows { glossaries[$0.int64(0)] = $0.data(1) }
+            read("definitions") {
+                try db.prepare("SELECT id, glossary FROM terms WHERE id IN (\(ids.map(String.init).joined(separator: ",")))")
+                    .rows { glossaries[$0.int64(0)] = $0.data(1) }
+            }
         }
         return entries.map { entry in
             guard let id = entry.rowID, let glossary = glossaries[id] else { return entry }
@@ -658,6 +694,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
                 ORDER BY d.priority, t.score DESC
                 """).bind(term).rows { out.append(Self.entry($0)) }
             } catch {
+                onReadError?("search", error)
                 return []
             }
             return out
@@ -690,6 +727,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
                         dictionary: r.string(6)))
                 }
             } catch {
+                onReadError?("kanji", error)
                 return []
             }
             return out
@@ -722,6 +760,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
                 LIMIT ?3
                 """).bind(prefix, end, limit).rows { out.append(Self.entry($0)) }
             } catch {
+                onReadError?("words that start with", error)
                 return []
             }
             return out

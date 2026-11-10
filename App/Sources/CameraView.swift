@@ -161,9 +161,12 @@ private struct PhotoView: View {
             guard let item else { return }
             Task {
                 if let data = try? await item.loadTransferable(type: Data.self), let picked = UIImage(data: data) {
-                    show(picked)
+                    // A slower photo chosen before this one must not replace it when it arrives late.
+                    if pickerItem == item { show(picked) }
+                } else {
+                    cannotOpen()
                 }
-                pickerItem = nil
+                if pickerItem == item { pickerItem = nil }
             }
         }
         .task { await takeScreenshotRequest() }
@@ -228,7 +231,13 @@ private struct PhotoView: View {
                 continuation.resume(returning: image)
             }
         }
-        if let picked { show(picked) }
+        if let picked { show(picked) } else { cannotOpen() }
+    }
+
+    /// A picture that cannot be read (still in iCloud with no network, a format iOS will not open) says so.
+    private func cannotOpen() {
+        Diagnostics.shared.log("Picture not opened")
+        model.toast = tr("Non riesco ad aprire questa immagine")
     }
 }
 

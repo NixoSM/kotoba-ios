@@ -75,6 +75,61 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(settings.history, [])
     }
 
+    /// The list of words sent to Anki has no other copy: a part written in a
+    /// shape this version cannot read must not reset it, nor anything else.
+    func testAPartInAnotherShapeDoesNotLoseTheRest() throws {
+        let odd = #"{"mined":["猫|ねこ"],"ankiFormat":"deck","collapsedDictionaries":7,"sortFrequencyDictionary":["JPDB"],"history":["猫"],"minedDates":{"猫|ねこ":"ieri"}}"#
+        let (settings, unread) = AppSettings.read(Data(odd.utf8))
+        XCTAssertEqual(settings?.mined, ["猫|ねこ"])
+        XCTAssertEqual(settings?.history, ["猫"])
+        XCTAssertNil(settings?.ankiFormat)
+        XCTAssertEqual(settings?.collapsedDictionaries, [])
+        XCTAssertEqual(unread.sorted(), ["ankiFormat", "collapsedDictionaries", "minedDates", "sortFrequencyDictionary"])
+
+        let words = #"{"mined":{"猫|ねこ":true},"history":["猫"]}"#
+        let second = AppSettings.read(Data(words.utf8))
+        XCTAssertEqual(second.settings?.mined, [])
+        XCTAssertEqual(second.settings?.history, ["猫"])
+        XCTAssertEqual(second.unread, ["mined"])
+
+        let fine = AppSettings.read(Data(#"{"mined":["a|b"]}"#.utf8))
+        XCTAssertEqual(fine.unread, [], "a missing part is not an unread one")
+    }
+
+    func testSettingsThatCannotBeReadAreKeptApart() throws {
+        let defaults = SharedStorage.defaults
+        let before = defaults.data(forKey: "settings.v1")
+        defer {
+            defaults.set(before, forKey: "settings.v1")
+            defaults.removeObject(forKey: AppSettings.unreadableKey)
+        }
+        Diagnostics.shared.clear()
+
+        // Not settings at all: nothing is loaded, and the app keeps the ones it is using.
+        let garbage = Data("not json".utf8)
+        defaults.set(garbage, forKey: "settings.v1")
+        XCTAssertNil(AppSettings.saved())
+        XCTAssertEqual(AppSettings.load(), AppSettings())
+        XCTAssertEqual(defaults.data(forKey: AppSettings.unreadableKey), garbage)
+        XCTAssertEqual(Diagnostics.shared.entries.filter { $0.contains("Settings not read in full (all)") }.count, 1)
+        // Coming back to the app reads them again: one copy, one line in the diary.
+        XCTAssertNil(AppSettings.saved())
+        XCTAssertEqual(Diagnostics.shared.entries.filter { $0.contains("Settings not read in full") }.count, 1)
+
+        // One part in another shape: the rest loads, and the whole is kept before the next save replaces it.
+        let partly = Data(#"{"mined":["猫|ねこ"],"ankiFormat":"deck"}"#.utf8)
+        defaults.set(partly, forKey: "settings.v1")
+        var loaded = try XCTUnwrap(AppSettings.saved())
+        XCTAssertEqual(loaded.mined, ["猫|ねこ"])
+        XCTAssertEqual(defaults.data(forKey: AppSettings.unreadableKey), partly)
+        XCTAssertTrue(Diagnostics.shared.entries.contains { $0.contains("Settings not read in full (ankiFormat)") })
+        loaded.remember("猫")
+        loaded.save()
+        XCTAssertEqual(AppSettings.saved(), loaded)
+        XCTAssertEqual(defaults.data(forKey: AppSettings.unreadableKey), partly, "the copy stays after the save")
+        Diagnostics.shared.clear()
+    }
+
     func testSavedSettingsComeBack() throws {
         var settings = AppSettings()
         settings.remember("  食べる ")

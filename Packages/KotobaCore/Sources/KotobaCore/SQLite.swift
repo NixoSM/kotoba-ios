@@ -6,10 +6,12 @@ import SQLite3
 import CSQLite3
 #endif
 
-public struct SQLiteError: Error, CustomStringConvertible {
+public struct SQLiteError: Error, CustomStringConvertible, LocalizedError {
     public let code: Int32
     public let message: String
     public var description: String { "SQLite \(code): \(message)" }
+    /// What an alert shows. Without it the phone says only "the operation couldn't be completed".
+    public var errorDescription: String? { description }
 }
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

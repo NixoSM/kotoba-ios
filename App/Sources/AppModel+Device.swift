@@ -9,8 +9,8 @@ extension AppModel {
     /// Called every time Kotoba comes to the front.
     func becameActive() {
         // The share panel may have changed settings (words sent to Anki).
-        let saved = AppSettings.load()
-        if saved != settings { settings = saved }
+        // Settings that cannot be read leave the ones in use alone.
+        if let saved = AppSettings.saved(), saved != settings { settings = saved }
         if let action = QuickAction.takePending() {
             perform(action)
             return

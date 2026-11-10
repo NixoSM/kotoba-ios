@@ -33,6 +33,20 @@ final class Diagnostics: @unchecked Sendable {
         }
     }
 
+    /// What was already written in this launch by `logOnce`.
+    private var saidOnce: Set<String> = []
+
+    /// For what would otherwise repeat at every keystroke: written the first
+    /// time only. Says whether this was the first time.
+    @discardableResult
+    func logOnce(_ message: String) -> Bool {
+        lock.lock()
+        let new = saidOnce.insert(message).inserted
+        lock.unlock()
+        if new { log(message) }
+        return new
+    }
+
     func log(_ message: String, at date: Date = Date()) {
         lock.lock()
         defer { lock.unlock() }

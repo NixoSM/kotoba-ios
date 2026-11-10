@@ -125,6 +125,26 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(LongWork.running, 0)
     }
 
+    /// A database that cannot be read used to look like "nothing found".
+    func testASearchThatCannotReadTheDatabaseSaysSoOnce() async throws {
+        struct Unreadable: Error, CustomStringConvertible { var description: String { "disk image is malformed" } }
+        Diagnostics.shared.clear()
+        let model = try model(settings: italianSettings())
+        let listener = try XCTUnwrap(model.store?.onReadError)
+        // The same failure at every keystroke, as the engine reports it from its own thread.
+        for _ in 1...5 { listener("search", Unreadable()) }
+        try await wait(for: "the alert") { model.errorMessage != nil }
+        XCTAssertTrue(model.errorMessage?.hasPrefix("La ricerca non riesce a leggere i dizionari") ?? false, model.errorMessage ?? "")
+        XCTAssertEqual(Diagnostics.shared.entries.filter { $0.contains("Database not read (search): disk image is malformed") }.count, 1)
+        // Dismissed: it does not come back for a second kind of failure, which the diary still records.
+        model.errorMessage = nil
+        listener("kanji", Unreadable())
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(Diagnostics.shared.entries.filter { $0.contains("Database not read") }.count, 2)
+        Diagnostics.shared.clear()
+    }
+
     // MARK: Dictionaries
 
     func testDeleteHappensAwayFromTheScreenAndTidiesTheSettings() async throws {

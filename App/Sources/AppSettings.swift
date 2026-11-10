@@ -24,30 +24,67 @@ struct AppSettings: Codable, Equatable {
 
     init() {}
 
-    // Written by hand so that settings saved by older versions, which lack
-    // newer keys, still load instead of resetting everything.
+    // Written by hand so that settings saved by another version still load.
+    // Each part is read on its own: one that is missing, or written in a shape
+    // this version cannot read, takes its default instead of taking the list
+    // of words sent to Anki down with it.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        ankiFormat = try c.decodeIfPresent(AnkiNoteFormat.self, forKey: .ankiFormat)
-        sortFrequencyDictionary = try c.decodeIfPresent(String.self, forKey: .sortFrequencyDictionary)
-        mined = try c.decodeIfPresent(Set<String>.self, forKey: .mined) ?? []
-        minedDates = (try? c.decodeIfPresent([String: Date].self, forKey: .minedDates)) ?? [:]
-        collapsedDictionaries = try c.decodeIfPresent(Set<String>.self, forKey: .collapsedDictionaries) ?? []
-        appearance = (try? c.decodeIfPresent(Appearance.self, forKey: .appearance)) ?? Appearance()
-        history = (try? c.decodeIfPresent([String].self, forKey: .history)) ?? []
-        language = (try? c.decodeIfPresent(AppLanguage.self, forKey: .language)) ?? .system
-        clipboardLookup = (try? c.decodeIfPresent(Bool.self, forKey: .clipboardLookup)) ?? true
-        screenshotLookup = (try? c.decodeIfPresent(Bool.self, forKey: .screenshotLookup)) ?? false
+        let unread = decoder.userInfo[Self.unreadParts] as? UnreadParts
+        func part<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
+            do {
+                return try c.decodeIfPresent(T.self, forKey: key) ?? fallback
+            } catch {
+                unread?.names.append(key.stringValue)
+                return fallback
+            }
+        }
+        ankiFormat = part(.ankiFormat, nil)
+        sortFrequencyDictionary = part(.sortFrequencyDictionary, nil)
+        mined = part(.mined, [])
+        minedDates = part(.minedDates, [:])
+        collapsedDictionaries = part(.collapsedDictionaries, [])
+        appearance = part(.appearance, Appearance())
+        history = part(.history, [])
+        language = part(.language, .system)
+        clipboardLookup = part(.clipboardLookup, true)
+        screenshotLookup = part(.screenshotLookup, false)
     }
 
-    private static let key = "settings.v1"
+    /// Collects the names of the parts that could not be read.
+    final class UnreadParts {
+        var names: [String] = []
+    }
 
-    static func load() -> AppSettings {
+    private static let unreadParts = CodingUserInfoKey(rawValue: "kotoba.unreadParts")!
+    private static let key = "settings.v1"
+    /// The saved settings as they were the last time they could not be read in full.
+    static let unreadableKey = "settings.v1.unreadable"
+
+    /// The settings in `data`, and the names of the parts that were not
+    /// understood ("all" when nothing was).
+    static func read(_ data: Data) -> (settings: AppSettings?, unread: [String]) {
+        let decoder = JSONDecoder()
+        let unread = UnreadParts()
+        decoder.userInfo[unreadParts] = unread
+        guard let settings = try? decoder.decode(AppSettings.self, from: data) else { return (nil, ["all"]) }
+        return (settings, unread.names)
+    }
+
+    /// What is saved: nil when nothing is, or when it cannot be read at all.
+    static func saved() -> AppSettings? {
         // Shared with the extensions; older versions saved in the app's own defaults.
-        guard let data = SharedStorage.defaults.data(forKey: key) ?? UserDefaults.standard.data(forKey: key),
-              let settings = try? JSONDecoder().decode(AppSettings.self, from: data) else { return AppSettings() }
+        guard let data = SharedStorage.defaults.data(forKey: key) ?? UserDefaults.standard.data(forKey: key) else { return nil }
+        let (settings, unread) = read(data)
+        // The next change saves over what was there. Keep a copy apart, once, and say so in the diary.
+        if !unread.isEmpty, SharedStorage.defaults.data(forKey: unreadableKey) != data {
+            SharedStorage.defaults.set(data, forKey: unreadableKey)
+            Diagnostics.shared.log("Settings not read in full (\(unread.joined(separator: ", "))): a copy is kept as \(unreadableKey)")
+        }
         return settings
     }
+
+    static func load() -> AppSettings { saved() ?? AppSettings() }
 
     /// A note for this word now exists in Anki.
     mutating func markMined(_ key: String, at date: Date = Date()) {

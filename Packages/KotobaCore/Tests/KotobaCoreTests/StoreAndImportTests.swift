@@ -278,6 +278,50 @@ final class StoreAndImportTests: XCTestCase {
         XCTAssertNoThrow(try YomitanImporter.importDictionary(at: try makeZip(title: "A", files: jmdict), into: store))
     }
 
+    /// A lookup that cannot read the database answers "nothing found", and
+    /// tells whoever listens the reason instead of keeping it to itself.
+    func testALookupThatCannotReadTheDatabaseSaysWhy() throws {
+        final class Heard: @unchecked Sendable {
+            private let lock = NSLock()
+            private var lines: [String] = []
+            func add(_ line: String) { lock.lock(); lines.append(line); lock.unlock() }
+            var all: [String] { lock.lock(); defer { lock.unlock() }; return lines }
+        }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let path = folder.appendingPathComponent("d.sqlite").path
+        let store = try DictionaryStore(path: path)
+        var files = jmdict
+        files["kanji_bank_1.json"] = #"[["猫","ビョウ","ねこ","",["cat"],{}]]"#
+        _ = try YomitanImporter.importDictionary(at: try makeZip(title: "A", files: files), into: store)
+        let heard = Heard()
+        store.onReadError = { what, error in heard.add("\(what): \(error)") }
+
+        XCTAssertEqual(store.kanji(["猫"]).count, 1)
+        XCTAssertEqual(heard.all, [], "nothing is said while all is well")
+
+        // Two tables go missing, as in a damaged file.
+        let other = try SQLiteDatabase(path: path)
+        try other.execute("ALTER TABLE kanji RENAME TO kanji_gone; ALTER TABLE term_meta RENAME TO term_meta_gone;")
+        XCTAssertTrue(store.kanji(["猫"]).isEmpty)
+        XCTAssertEqual(store.frequencyDictionaries(), [])
+        XCTAssertTrue(store.termMeta(for: ["猫"]).frequencies.isEmpty)
+        XCTAssertEqual(store.entries(matching: "猫").count, 1, "what can still be read is still found")
+        let said = heard.all
+        XCTAssertEqual(said.count, 3, "\(said)")
+        XCTAssertTrue(said[0].hasPrefix("kanji: SQLite") && said[0].contains("kanji"), said[0])
+        XCTAssertTrue(said[1].hasPrefix("frequency dictionaries: SQLite"), said[1])
+        XCTAssertTrue(said[2].hasPrefix("frequencies and pitch accents: SQLite"), said[2])
+        XCTAssertEqual(SQLiteError(code: 1, message: "no such table: kanji").localizedDescription, "SQLite 1: no such table: kanji")
+
+        // Back again: a list that could not be read was not remembered as empty.
+        try other.execute("ALTER TABLE kanji_gone RENAME TO kanji; ALTER TABLE term_meta_gone RENAME TO term_meta;")
+        XCTAssertEqual(store.frequencyDictionaries(), ["A"])
+        XCTAssertEqual(store.kanji(["猫"]).count, 1)
+        XCTAssertEqual(heard.all.count, 3)
+    }
+
     func testWordsStartingWith() throws {
         let store = try DictionaryStore(path: ":memory:")
         let files = ["term_bank_1.json": """

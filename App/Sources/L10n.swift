@@ -289,6 +289,7 @@ enum L10n {
 
         // Messages
         "Impossibile aprire il database: {0}": ("Couldn't open the database: {0}", "データベースを開けません：{0}"),
+        "La ricerca non riesce a leggere i dizionari: {0}": ("Search can't read the dictionaries: {0}", "検索が辞書を読み込めません：{0}"),
         "Prima configura la nota Anki in Impostazioni (puoi importarla dal backup di Yomitan).":
             ("First set up the Anki note in Settings (you can import it from your Yomitan backup).",
              "先に「設定」で Anki のノートを設定してください（Yomitan のバックアップから読み込めます）。"),
@@ -383,6 +384,7 @@ enum L10n {
         "Kotoba non può vedere le foto: Impostazioni › App › Kotoba › Foto.":
             ("Kotoba can't see your photos: Settings › Apps › Kotoba › Photos.", "Kotoba が写真にアクセスできません：設定 › アプリ › Kotoba › 写真。"),
         "Non trovo screenshot.": ("No screenshots found.", "スクショが見つかりません。"),
+        "Non riesco ad aprire questa immagine": ("I can't open this picture", "この画像を開けません"),
         "La lente non è disponibile": ("The lens isn't available", "レンズは利用できません"),
         "Questo iPhone non riconosce il giapponese dal vivo. Usa la modalità Foto.":
             ("This iPhone can't read Japanese live. Use Photo mode.", "この iPhone はライブで日本語を認識できません。「写真」モードを使ってください。"),

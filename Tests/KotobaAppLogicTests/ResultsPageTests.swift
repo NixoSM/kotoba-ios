@@ -72,6 +72,18 @@ final class ResultsPageTests: XCTestCase {
         XCTAssertEqual(html.components(separatedBy: "<script nonce=\"\(ResultsPage.scriptNonce)\">").count - 1, 2)
     }
 
+    /// Your own CSS stays inside its <style> element whatever it holds.
+    func testYourOwnCSSCannotSpillOntoThePage() throws {
+        var options = ResultsPage.Options()
+        options.appearance.customCSS = #".gloss::after { content: "</style><h1>fuori</h1>"; } .entry { color: red; }"#
+        let html = try page("食べる", options: options)
+        XCTAssertFalse(html.contains("</style><h1>"))
+        XCTAssertTrue(html.contains(#"content: "<\/style><h1>fuori<\/h1>";"#), "the same text to CSS")
+        XCTAssertTrue(html.contains(".entry { color: red; }"))
+        XCTAssertEqual(ResultsPage.ownCSS("a > b { margin: 0 } @media (width < 600px) { a { top: 0 } }"),
+                       "a > b { margin: 0 } @media (width < 600px) { a { top: 0 } }", "ordinary CSS is left as typed")
+    }
+
     func testPageLoadsNothingFromTheNetwork() throws {
         let html = try page("猫")
         let policy = ResultsPage.contentSecurityPolicy

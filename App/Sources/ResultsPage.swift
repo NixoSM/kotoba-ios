@@ -64,9 +64,16 @@ enum ResultsPage {
         <style>\(FontCatalog.fontFaceCSS([bodyFont, headFont]))</style>
         <style>\(ThemePalette.css(for: a.theme))\(variables)\(baseCSS)</style>
         <style>\(dictionaryCSS)</style>
-        <style>\(a.customCSS)</style>
+        <style>\(ownCSS(a.customCSS))</style>
         </head><body>\(bodyOpen)\(body)\(bodyClose)\(tapScript)</script></body></html>
         """
+    }
+
+    /// Your own CSS, as typed. "</" is the only thing that could close the
+    /// <style> element early and spill the rest onto the page; with the
+    /// backslash it means the same to CSS and nothing to HTML.
+    static func ownCSS(_ css: String) -> String {
+        css.replacingOccurrences(of: "</", with: "<\\/")
     }
 
     /// The page's only script carries this mark. It is made up afresh at every

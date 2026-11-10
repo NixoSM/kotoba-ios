@@ -16,6 +16,8 @@ final class AppModel {
     /// Title of the dictionary being deleted, while its rows are removed.
     private(set) var deleting: String?
     var errorMessage: String?
+    /// One alert per launch about a database that cannot be read, not one per search.
+    @ObservationIgnored private var toldAboutReads = false
     /// Short confirmation shown at the bottom of the screen.
     var toast: String?
     var settings: AppSettings {
@@ -72,6 +74,12 @@ final class AppModel {
         self.store = store
         self.settings = settings
         MediaLink.store = store
+        // A lookup that cannot read the database answers "nothing found". The
+        // reason goes in the diary, and on screen the first time.
+        store?.onReadError = { [weak self] what, error in
+            guard Diagnostics.shared.logOnce("Database not read (\(what)): \(error)") else { return }
+            Task { @MainActor [weak self] in self?.databaseNotRead(error) }
+        }
         ThemeStore.shared.apply(settings.appearance.theme)
         L10n.apply(settings.language)
         refresh()
@@ -94,6 +102,12 @@ final class AppModel {
     }
 
     /// Shows a problem and writes it in the diary.
+    private func databaseNotRead(_ error: Error) {
+        guard !toldAboutReads, errorMessage == nil else { return }
+        toldAboutReads = true
+        errorMessage = tr("La ricerca non riesce a leggere i dizionari: {0}", error.localizedDescription)
+    }
+
     private func report(_ message: String, log: String) {
         errorMessage = message
         Diagnostics.shared.log(log)
@@ -195,6 +209,8 @@ final class AppModel {
     private func indexStatus(_ text: String?) { reverseIndexStatus = text }
 
     /// Dictionaries imported with version 0.2 have no reverse index yet: build it once.
+    /// Called once, at launch. A second run started while the first is going
+    /// would have its progress line cleared when the first one ends.
     func buildMissingReverseIndexes() {
         guard let store else { return }
         Task.detached(priority: .utility) { [weak self] in

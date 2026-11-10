@@ -9,6 +9,8 @@ final class WordAudio {
     private var player: AVAudioPlayer?
     /// Counts the words played, so only the last one gives the sound back.
     private var turn = 0
+    /// Counts the words asked for, so a slow download cannot play over a word asked for after it.
+    private var asked = 0
     /// JapanesePod101 answers unknown words with this "not available" clip.
     private let missingClipSize = 52288
 
@@ -18,8 +20,12 @@ final class WordAudio {
         var c = URLComponents(string: "https://assets.languagepod101.com/dictionary/japanese/audiomp3.php")!
         c.queryItems = [URLQueryItem(name: "kanji", value: expression), URLQueryItem(name: "kana", value: reading)]
         guard let url = c.url else { return .failed }
+        asked += 1
+        let request = asked
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
+            // Another word was asked for while this one was on its way: that one plays.
+            guard request == asked else { return .played }
             guard data.count != missingClipSize, data.count > 1000 else { return .notFound }
             let session = AVAudioSession.sharedInstance()
             // Music or a podcast playing in another app is lowered for the
