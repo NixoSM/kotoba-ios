@@ -9,8 +9,8 @@ packages:
 # The version, once, for the app and its two extensions (Impostazioni shows it).
 settings:
   base:
-    MARKETING_VERSION: "0.16.0"
-    CURRENT_PROJECT_VERSION: "16"
+    MARKETING_VERSION: "0.16.1"
+    CURRENT_PROJECT_VERSION: "17"
 targets:
   Kotoba:
     type: application

@@ -99,11 +99,17 @@ final class SearchEngineTests: XCTestCase {
     func testMinedLinkNamesTheWord() throws {
         let key = "食べる|たべる"
         let address = MinedLink.returnURL(for: key)
-        XCTAssertTrue(address.hasPrefix("kotoba://mined?k="))
+        XCTAssertTrue(address.hasPrefix("kotoba://mined?c=\(MinedLink.code)&k="), address)
         XCTAssertEqual(MinedLink.minedKey(from: try XCTUnwrap(URL(string: address))), key)
         // An older link without the word, and other addresses.
         XCTAssertNil(MinedLink.minedKey(from: try XCTUnwrap(URL(string: "kotoba://mined"))))
         XCTAssertNil(MinedLink.minedKey(from: try XCTUnwrap(URL(string: "kotoba://search?k=x"))))
+        // What a web page or another app could open: no code, or a guessed one.
+        XCTAssertNil(MinedLink.minedKey(from: try XCTUnwrap(URL(string: "kotoba://mined?k=x"))))
+        XCTAssertNil(MinedLink.minedKey(from: try XCTUnwrap(URL(string: "kotoba://mined?c=guess&k=x"))))
+        XCTAssertNil(MinedLink.minedKey(from: try XCTUnwrap(URL(string: "kotoba://mined?c=&k=x"))))
+        XCTAssertEqual(MinedLink.code, MinedLink.code, "made once, then kept")
+        XCTAssertGreaterThanOrEqual(MinedLink.code.count, 32)
         // Odd characters survive the trip.
         let odd = "a&b=c d|え+"
         XCTAssertEqual(MinedLink.minedKey(from: try XCTUnwrap(URL(string: MinedLink.returnURL(for: odd)))), odd)

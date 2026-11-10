@@ -61,6 +61,9 @@ public struct KanjiEntry: Hashable, Sendable {
     public var stats: [String: String]
     /// Title of the dictionary the entry came from (filled in by the store).
     public var dictionary: String = ""
+    /// How common the character is, according to each frequency list that
+    /// knows it (`kanji_meta_bank` files; filled in by the store).
+    public var frequencies: [KanjiFrequency] = []
 
     public init(character: String, onyomi: [String], kunyomi: [String], tags: [String], meanings: [String],
                 stats: [String: String] = [:], dictionary: String = "") {
@@ -70,6 +73,21 @@ public struct KanjiEntry: Hashable, Sendable {
         self.tags = tags
         self.meanings = meanings
         self.stats = stats
+        self.dictionary = dictionary
+    }
+}
+
+/// One line of a `kanji_meta_bank_N.json` file: how common a character is.
+public struct KanjiFrequency: Hashable, Sendable {
+    public var character: String
+    /// As the list writes it: usually a rank ("300"), sometimes with a mark ("300㋕").
+    public var value: String
+    /// Title of the list (filled in by the store).
+    public var dictionary: String = ""
+
+    public init(character: String, value: String, dictionary: String = "") {
+        self.character = character
+        self.value = value
         self.dictionary = dictionary
     }
 }
@@ -129,6 +147,34 @@ public enum YomitanParser {
             let json = try JSONSerialization.data(withJSONObject: [payload])
             return TermMetaEntry(expression: expression, kind: kind, dataJSON: json)
         }
+    }
+
+    /// Rows are [character, "freq", value], where value is a number, a text,
+    /// or {"value": 300, "displayValue": "300㋕"}. Other kinds are skipped.
+    public static func kanjiMetaBank(from data: Data, file: String = "kanji_meta_bank") throws -> [KanjiFrequency] {
+        let rows = try array(data, file: file)
+        return try rows.enumerated().compactMap { i, raw in
+            guard let row = raw as? [Any], row.count >= 3, let character = row[0] as? String, !character.isEmpty,
+                  let kind = row[1] as? String else {
+                throw YomitanFormatError.badRow(file: file, row: i)
+            }
+            guard kind == "freq", let value = frequencyText(row[2]), !value.isEmpty else { return nil }
+            return KanjiFrequency(character: character, value: value)
+        }
+    }
+
+    private static func frequencyText(_ payload: Any) -> String? {
+        if let text = payload as? String { return text }
+        if let number = payload as? NSNumber {
+            // 300, not 300.0; a list that counts in fractions keeps them.
+            let whole = number.doubleValue.rounded() == number.doubleValue && abs(number.doubleValue) < 1e15
+            return whole ? String(number.int64Value) : String(number.doubleValue)
+        }
+        if let object = payload as? [String: Any] {
+            if let shown = object["displayValue"] as? String, !shown.isEmpty { return shown }
+            return object["value"].flatMap(frequencyText)
+        }
+        return nil
     }
 
     /// Format 3 rows are [character, onyomi, kunyomi, tags, [meanings], {stats}];

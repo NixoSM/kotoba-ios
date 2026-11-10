@@ -27,7 +27,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
     private let lock = NSLock()
     private let path: String
 
-    public static let schemaVersion = 6
+    public static let schemaVersion = 7
 
     /// Pass `":memory:"` for a throwaway store (tests).
     public init(path: String) throws {
@@ -148,6 +148,19 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
             CREATE INDEX IF NOT EXISTS kanji_character ON kanji(character);
             CREATE INDEX IF NOT EXISTS kanji_dict ON kanji(dict_id);
             ALTER TABLE dictionaries ADD COLUMN kanji_count INTEGER NOT NULL DEFAULT 0;
+            """)
+        }
+        if version < 7 {
+            // v7: how common each kanji is (kanji_meta_bank files), which used to be skipped.
+            try db.execute("""
+            CREATE TABLE IF NOT EXISTS kanji_meta (
+                id INTEGER PRIMARY KEY,
+                dict_id INTEGER NOT NULL REFERENCES dictionaries(id) ON DELETE CASCADE,
+                character TEXT NOT NULL,
+                value TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS kanji_meta_character ON kanji_meta(character);
+            CREATE INDEX IF NOT EXISTS kanji_meta_dict ON kanji_meta(dict_id);
             """)
         }
         try db.execute("PRAGMA user_version = \(Self.schemaVersion)")
@@ -284,6 +297,7 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         private let insertFTS: SQLiteStatement
         private let insertMedia: SQLiteStatement
         private let insertKanji: SQLiteStatement
+        private let insertKanjiMeta: SQLiteStatement
         public private(set) var termCount = 0
         public private(set) var metaCount = 0
         public private(set) var kanjiCount = 0
@@ -301,6 +315,15 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
             insertKanji = try db.prepare("""
             INSERT INTO kanji (dict_id, character, onyomi, kunyomi, tags, meanings, stats) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             """)
+            insertKanjiMeta = try db.prepare("INSERT INTO kanji_meta (dict_id, character, value) VALUES (?1, ?2, ?3)")
+        }
+
+        /// Counted with the frequencies of words: the dictionary list shows one number for both.
+        public func add(_ frequencies: [KanjiFrequency]) throws {
+            for f in frequencies {
+                try insertKanjiMeta.bind(dictID, f.character, f.value).run()
+            }
+            metaCount += frequencies.count
         }
 
         public func add(_ kanji: [KanjiEntry]) throws {
@@ -725,6 +748,30 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
                         meanings: (try? JSONDecoder().decode([String].self, from: r.data(4))) ?? [],
                         stats: (try? JSONDecoder().decode([String: String].self, from: r.data(5))) ?? [:],
                         dictionary: r.string(6)))
+                }
+                // Frequency lists: joined to the first entry of their character,
+                // or shown alone when no kanji dictionary knows it.
+                var frequencies: [String: [KanjiFrequency]] = [:]
+                let meta = try db.prepare("""
+                SELECT m.character, m.value, d.title
+                FROM kanji_meta m JOIN dictionaries d ON d.id = m.dict_id
+                WHERE d.enabled = 1 AND m.character IN (\(placeholders))
+                ORDER BY d.priority, m.id
+                """)
+                meta.bindArray(characters)
+                try meta.rows { r in
+                    frequencies[r.string(0), default: []].append(
+                        KanjiFrequency(character: r.string(0), value: r.string(1), dictionary: r.string(2)))
+                }
+                for (character, list) in frequencies {
+                    if let i = out.firstIndex(where: { $0.character == character }) {
+                        out[i].frequencies = list
+                    } else {
+                        var alone = KanjiEntry(character: character, onyomi: [], kunyomi: [], tags: [], meanings: [],
+                                               dictionary: list[0].dictionary)
+                        alone.frequencies = list
+                        out.append(alone)
+                    }
                 }
             } catch {
                 onReadError?("kanji", error)

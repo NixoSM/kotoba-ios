@@ -171,6 +171,8 @@ enum ResultsPage {
         if let grade = entry.stats["grade"], !grade.isEmpty { out.append(tr("classe {0}", grade)) }
         if let jlpt = entry.stats["jlpt"], !jlpt.isEmpty { out.append("JLPT \(jlpt)") }
         if let freq = entry.stats["freq"], !freq.isEmpty { out.append(tr("frequenza {0}", freq)) }
+        // Frequency lists name themselves: two of them rarely count the same way.
+        out += entry.frequencies.map { "\($0.dictionary) \($0.value)" }
         return out + entry.tags
     }
 

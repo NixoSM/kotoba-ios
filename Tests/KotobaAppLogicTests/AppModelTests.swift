@@ -322,6 +322,33 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(model.settings.mined.isEmpty)
     }
 
+    /// A web page or another app can open kotoba://mined too: without the
+    /// code Kotoba gave AnkiMobile, no word is ticked and nothing is announced.
+    func testANoteSavedAddressFromElsewhereTicksNothing() throws {
+        let model = try model()
+        model.handle(url: try XCTUnwrap(URL(string: "kotoba://mined?k=%E7%8C%AB%7C%E3%81%AD%E3%81%93")))
+        model.handle(url: try XCTUnwrap(URL(string: "kotoba://mined?c=00000000000000000000000000000000&k=x")))
+        XCTAssertTrue(model.settings.mined.isEmpty)
+        XCTAssertNil(model.toast)
+    }
+
+    /// The index builder of old dictionaries writes through the connection
+    /// searches use: an import started meanwhile waits for it instead of
+    /// making a search hang.
+    func testImportsWaitForTheIndexBuilder() async throws {
+        let model = try model()
+        XCTAssertFalse(model.isBusy)
+        model.buildMissingReverseIndexes()
+        XCTAssertTrue(model.isIndexing)
+        model.importDictionary(from: try Fixtures.dictionaryFile("Uno", terms: Fixtures.italian))
+        XCTAssertFalse(model.isImporting)
+        XCTAssertEqual(model.toast, "Aspetta che Kotoba finisca di scrivere i dizionari")
+        try await wait(for: "the index builder") { !model.isIndexing }
+        model.importDictionary(from: try Fixtures.dictionaryFile("Uno", terms: Fixtures.italian))
+        try await wait(for: "the import") { !model.isImporting }
+        XCTAssertEqual(model.dictionaries.map(\.title), ["Uno"])
+    }
+
     // MARK: Diagnostics
 
     func testTheReportSaysWhatIsInstalledAndWhatHappened() async throws {

@@ -40,7 +40,10 @@ final class AppModel {
 
     var isImporting: Bool { if case .running = importStatus { true } else { false } }
     /// The database is being written: other changes to the dictionaries wait.
-    var isBusy: Bool { isImporting || deleting != nil }
+    var isBusy: Bool { isImporting || deleting != nil || isIndexing }
+    /// Search indexes of dictionaries from old versions are being written
+    /// (at launch, usually for an instant: there is nothing to build).
+    private(set) var isIndexing = false
 
     enum ImportStatus: Equatable {
         /// `position` of `total` files, counted from 1.
@@ -140,7 +143,12 @@ final class AppModel {
         guard url.scheme == "kotoba" else { return }
         switch url.host {
         case "mined":
-            if let key = MinedLink.minedKey(from: url) { settings.markMined(key) }
+            // Only an address that carries this copy's code: see MinedLink.
+            guard let key = MinedLink.minedKey(from: url) else {
+                Diagnostics.shared.log("A note-saved address without Kotoba's code was ignored")
+                return
+            }
+            settings.markMined(key)
             toast = tr("Aggiunta ad Anki")
         case "search":
             pendingQuery = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "q" }?.value
@@ -221,6 +229,10 @@ final class AppModel {
     /// would have its progress line cleared when the first one ends.
     func buildMissingReverseIndexes() {
         guard let store else { return }
+        // The batches are written through the connection searches use. An
+        // import started meanwhile would make one wait five seconds and give
+        // up, so imports and other changes wait for this instead.
+        isIndexing = true
         Task.detached(priority: .utility) { [weak self] in
             do {
                 try store.buildMissingReverseIndexes { p in
@@ -236,7 +248,10 @@ final class AppModel {
                 Diagnostics.shared.log("Search indexes not built: \(error)")
             }
             // After the last progress message, which travels the same way.
-            Task { @MainActor [weak self] in self?.indexStatus(nil) }
+            Task { @MainActor [weak self] in
+                self?.indexStatus(nil)
+                self?.isIndexing = false
+            }
         }
     }
 
@@ -265,8 +280,8 @@ final class AppModel {
             errorMessage = tr("I dizionari non sono disponibili: il database non si è aperto. Chiudi e riapri Kotoba; i dettagli sono in Impostazioni › Diagnostica.")
             return
         }
-        // A delete holds the database: the import would wait for it, then fail.
-        guard deleting == nil else { return busyNote() }
+        // A delete or the index builder holds the database: the import would wait for it, then fail.
+        guard deleting == nil, !isIndexing else { return busyNote() }
         // Permission to read a picked file is asked for now, while the choice is fresh.
         let files = urls.map { QueuedFile(url: $0, opened: PickedFile.open($0)) }
         importQueue += files

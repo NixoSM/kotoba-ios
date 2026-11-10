@@ -210,12 +210,51 @@ final class StoreAndImportTests: XCTestCase {
         XCTAssertEqual(found[1].stats["strokes"], "9")
         XCTAssertEqual(found[1].stats["grade"], "2")
         XCTAssertEqual(found[1].dictionary, "KANJIDIC")
+        XCTAssertEqual(found[1].frequencies.map(\.value), ["300"])
+        XCTAssertEqual(found[1].frequencies.first?.dictionary, "KANJIDIC")
+        XCTAssertTrue(found[0].frequencies.isEmpty)
+        XCTAssertEqual(installed.metaCount, 1)
 
         try store.setEnabled(false, dictionary: installed.id)
         XCTAssertTrue(store.kanji(["食"]).isEmpty)
         try store.delete(dictionary: installed.id)
         try store.setEnabled(true, dictionary: installed.id)
         XCTAssertTrue(store.kanji(["食"]).isEmpty)
+    }
+
+    /// A list of how common each kanji is, with no kanji_bank of its own:
+    /// it used to import as nothing at all.
+    func testKanjiFrequencyList() throws {
+        let store = try DictionaryStore(path: ":memory:")
+        let kanjidic = try YomitanImporter.importDictionary(at: try makeZip(title: "KANJIDIC", files: [
+            "kanji_bank_1.json": #"[["食","ショク","た.べる","jouyou",["eat"],{}]]"#,
+        ]), into: store)
+        let list = try YomitanImporter.importDictionary(at: try makeZip(title: "Aozora", files: [
+            "kanji_meta_bank_1.json": #"[["食","freq",{"value":412,"displayValue":"412㋕"}],["鬱","freq","2501"],["食","other",1],["猫","freq",12.5]]"#,
+        ]), into: store)
+        XCTAssertEqual(list.metaCount, 3, "kinds other than freq are skipped")
+        XCTAssertEqual(list.kanjiCount, 0)
+
+        let found = store.kanji(["鬱", "食", "猫"])
+        XCTAssertEqual(found.map(\.character), ["鬱", "食", "猫"])
+        // Known to no kanji dictionary: the frequency is shown alone.
+        XCTAssertEqual(found[0].frequencies, [KanjiFrequency(character: "鬱", value: "2501", dictionary: "Aozora")])
+        XCTAssertTrue(found[0].meanings.isEmpty)
+        // Known to one: joined to its entry, as the list writes it.
+        XCTAssertEqual(found[1].meanings, ["eat"])
+        XCTAssertEqual(found[1].frequencies.map(\.value), ["412㋕"])
+        XCTAssertEqual(found[2].frequencies.map(\.value), ["12.5"])
+
+        try store.setEnabled(false, dictionary: list.id)
+        XCTAssertEqual(store.kanji(["鬱", "食"]).map(\.character), ["食"])
+        XCTAssertTrue(store.kanji(["食"])[0].frequencies.isEmpty)
+        try store.setEnabled(true, dictionary: list.id)
+        try store.delete(dictionary: list.id)
+        XCTAssertTrue(store.kanji(["鬱"]).isEmpty, "deleted with its list")
+        _ = kanjidic
+
+        XCTAssertThrowsError(try YomitanParser.kanjiMetaBank(from: Data(#"[["食"]]"#.utf8)))
+        XCTAssertThrowsError(try YomitanParser.kanjiMetaBank(from: Data(#"{"a":1}"#.utf8)))
     }
 
     func testOldKanjiFormatAndDictionaryIndex() throws {
