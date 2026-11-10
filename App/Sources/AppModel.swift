@@ -72,25 +72,8 @@ final class AppModel {
         stylesheets = store?.stylesheets() ?? [:]
     }
 
-    /// What a search returns, split by how each headword was found.
-    struct SearchOutcome {
-        var direct: [HeadwordGroup] = []
-        /// Set when Latin input was also valid romaji (taberu → たべる).
-        var romajiReading: String?
-        var byMeaning: [HeadwordGroup] = []
-        /// The text the words were found in, used as the Anki sentence.
-        var sentence = ""
-        /// Latin input is usually a meaning ("run"), so the romaji reading
-        /// (るん) only goes first when it is a common word.
-        var romajiFirst = true
-        /// How long the search took, shown at the bottom of the results.
-        var milliseconds: Int?
-
-        func group(section: String, index: Int) -> HeadwordGroup? {
-            let list = section == "meaning" ? byMeaning : direct
-            return list.indices.contains(index) ? list[index] : nil
-        }
-    }
+    /// Older name of `SearchResults`, kept for the screens that use it.
+    typealias SearchOutcome = SearchResults
 
     // MARK: Anki
 
@@ -100,17 +83,15 @@ final class AppModel {
             errorMessage = tr("Prima configura la nota Anki in Impostazioni (puoi importarla dal backup di Yomitan).")
             return
         }
-        guard let url = AnkiMobileLink.url(format: format, context: group.miningContext(sentence: sentence)) else {
+        // AnkiMobile opens this address once the note is saved: that, and not
+        // the tap here, is what marks the word as added.
+        guard let url = AnkiMobileLink.url(format: format, context: group.miningContext(sentence: sentence),
+                                           returnURL: MinedLink.returnURL(for: group.minedKey)) else {
             errorMessage = tr("Non riesco a creare il collegamento per AnkiMobile.")
             return
         }
         URLOpener.open(url) { [weak self] opened in
-            guard let self else { return }
-            if opened {
-                self.settings.mined.insert(group.minedKey)
-            } else {
-                self.errorMessage = tr("AnkiMobile non risulta installato.")
-            }
+            if !opened { self?.errorMessage = tr("AnkiMobile non risulta installato.") }
         }
     }
 
@@ -118,6 +99,7 @@ final class AppModel {
         guard url.scheme == "kotoba" else { return }
         switch url.host {
         case "mined":
+            if let key = MinedLink.minedKey(from: url) { settings.mined.insert(key) }
             toast = tr("Aggiunta ad Anki")
         case "search":
             pendingQuery = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "q" }?.value
@@ -164,59 +146,17 @@ final class AppModel {
         }
     }
 
-    func search(_ text: String) async -> SearchOutcome {
-        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let store, !text.isEmpty else { return SearchOutcome() }
+    /// - Parameter suggestions: also list words that start with the text (the search box).
+    func search(_ text: String, suggestions: Bool = false) async -> SearchResults {
+        guard let store else { return SearchResults() }
         let scanner = scanner
-        let sortDictionary = settings.sortFrequencyDictionary
-        // Your dictionary order, so definitions under a word follow it.
-        let priority = Dictionary(dictionaries.map { ($0.title, $0.priority) }, uniquingKeysWith: { a, _ in a })
-        return await Task.detached(priority: .userInitiated) { () -> SearchOutcome in
-            let started = Date()
-            var outcome = SearchOutcome(sentence: text)
-            if Kana.containsJapanese(text) {
-                outcome.direct = HeadwordGroup.group(scanner.scan(text, in: store).map(\.groupInput), priority: priority)
-                HeadwordGroup.attachMeta(&outcome.direct, from: store, sortDictionary: sortDictionary)
-                outcome.direct = HeadwordGroup.sortedForScan(outcome.direct)
-            } else {
-                // Romaji is one word: "to run" is English, not とるん.
-                if !text.contains(" "), let kana = Romaji.toHiragana(text) {
-                    // Only whole-word matches: "sake" should give 酒, not さ + rest.
-                    let exact = scanner.scan(kana, in: store).filter { $0.matchedLength == kana.count }
-                    if !exact.isEmpty {
-                        outcome.romajiReading = kana
-                        outcome.direct = HeadwordGroup.group(exact.map(\.groupInput), priority: priority)
-                        HeadwordGroup.attachMeta(&outcome.direct, from: store, sortDictionary: sortDictionary)
-                        outcome.direct = HeadwordGroup.sortedForScan(outcome.direct)
-                    }
-                }
-                // A match inside a compound (仕立て → ◎仕立屋 "sarto") shows the compound itself.
-                var meaningInputs: [(entry: TermEntry, matchedText: String, reasons: [Reason])] = []
-                for hit in store.reverseSearch(text, limit: 30) {
-                    if let sub = ReverseSearch.subentry(matching: text, glossaryJSON: hit.entry.glossaryJSON),
-                       sub != hit.entry.expression {
-                        let found = store.entries(matching: sub)
-                        if !found.isEmpty {
-                            meaningInputs += found.map { ($0, text, []) }
-                            continue
-                        }
-                    }
-                    meaningInputs.append((hit.entry, text, []))
-                }
-                outcome.byMeaning = HeadwordGroup.group(meaningInputs, priority: priority)
-                HeadwordGroup.attachMeta(&outcome.byMeaning, from: store, sortDictionary: sortDictionary)
-                let romajiRank = outcome.direct.compactMap(\.sortRank).min()
-                let meaningRank = outcome.byMeaning.prefix(3).compactMap(\.sortRank).min()
-                if !outcome.byMeaning.isEmpty {
-                    switch (romajiRank, meaningRank) {
-                    case let (r?, m?): outcome.romajiFirst = r <= m
-                    case (_?, nil): outcome.romajiFirst = true
-                    default: outcome.romajiFirst = false
-                    }
-                }
-            }
-            outcome.milliseconds = Int(Date().timeIntervalSince(started) * 1000)
-            return outcome
+        let request = SearchEngine.Request(
+            text: text, sortDictionary: settings.sortFrequencyDictionary,
+            // Your dictionary order, so definitions under a word follow it.
+            priority: Dictionary(dictionaries.map { ($0.title, $0.priority) }, uniquingKeysWith: { a, _ in a }),
+            suggest: suggestions)
+        return await Task.detached(priority: .userInitiated) {
+            SearchEngine.run(request, store: store, scanner: scanner)
         }.value
     }
 

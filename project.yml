@@ -66,10 +66,13 @@ targets:
       - App/Sources/AudioPlayer.swift
       - App/Sources/HeadwordGroup.swift
       - App/Sources/L10n.swift
+      - App/Sources/MediaLink.swift
+      - App/Sources/Palette.swift
       - App/Sources/Reason+Italian.swift
       - App/Sources/ResultsPage.swift
       - App/Sources/ResultsPane.swift
       - App/Sources/ResultsWebView.swift
+      - App/Sources/SearchResults.swift
     # No font files here: the panel reads the app's own copies (33 MB saved).
     dependencies:
       - package: KotobaCore

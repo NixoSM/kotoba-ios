@@ -15,7 +15,7 @@ enum ResultsPage {
         var appearance = Appearance()
     }
 
-    static func html(outcome: AppModel.SearchOutcome, query: String, options o: Options) -> String {
+    static func html(outcome: SearchResults, query: String, options o: Options) -> String {
         var direct = ""
         if let reading = outcome.romajiReading, !outcome.direct.isEmpty {
             direct += section(tr("Letto come {0}", reading))
@@ -31,9 +31,16 @@ enum ResultsPage {
                 meaning += entry(g, link: o.canMine ? "kotoba://mine?s=meaning&i=\(i)" : nil, options: o)
             }
         }
-        var body = outcome.romajiFirst ? direct + meaning : meaning + direct
-        if let ms = outcome.milliseconds, !(outcome.direct.isEmpty && outcome.byMeaning.isEmpty) {
-            body += "<p class=\"timing\">\(tr("{0} parole · {1} ms", outcome.direct.count + outcome.byMeaning.count, ms))</p>"
+        let starting = suggestions(outcome)
+        var body: String
+        if outcome.suggestionsFirst {
+            body = starting + (outcome.romajiFirst ? direct + meaning : meaning + direct)
+        } else {
+            body = outcome.romajiFirst ? direct + starting + meaning : meaning + direct + starting
+        }
+        let words = outcome.direct.count + outcome.byMeaning.count
+        if let ms = outcome.milliseconds, words > 0 {
+            body += "<p class=\"timing\">\(words == 1 ? tr("1 parola · {0} ms", ms) : tr("{0} parole · {1} ms", words, ms))</p>"
         }
         return page(body: body, options: o)
     }
@@ -52,12 +59,25 @@ enum ResultsPage {
         <!doctype html>
         <html lang="\(L10n.htmlLang)" class="\(a.layout.rawValue)"><head>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+        <meta http-equiv="Content-Security-Policy" content="\(contentSecurityPolicy)">
         <style>\(FontCatalog.fontFaceCSS([bodyFont, headFont]))</style>
         <style>\(ThemePalette.css(for: a.theme))\(variables)\(baseCSS)</style>
         <style>\(dictionaryCSS)</style>
         <style>\(a.customCSS)</style>
         </head><body>\(bodyOpen)\(body)\(bodyClose)\(tapScript)</script></body></html>
         """
+    }
+
+    /// The page's only script carries this mark. It is made up afresh at every
+    /// launch, so nothing written in a dictionary file can pass for it.
+    static let scriptNonce = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+
+    /// What the page may load and run: its own fonts and the dictionaries'
+    /// pictures, its own script, and nothing from the network. Definitions are
+    /// already cleaned when they are turned into HTML; this is the second lock.
+    static var contentSecurityPolicy: String {
+        "default-src 'none'; img-src \(MediaLink.scheme): data:; font-src \(MediaLink.scheme):; "
+            + "style-src 'unsafe-inline'; script-src 'nonce-\(scriptNonce)'"
     }
 
     /// Each dictionary's styles.css, limited to its own definitions.
@@ -70,7 +90,22 @@ enum ResultsPage {
     /// The results sit in this element, so a new search can replace just
     /// them and keep the page (and its multi-megabyte fonts) loaded.
     static let bodyOpen = "<main id=\"kotoba-results\">"
-    static let bodyClose = "</main><script>"
+    static let bodyClose = "</main><script nonce=\"\(scriptNonce)\">"
+
+    /// "Words that start with …": a column of headwords, as in the index of a
+    /// printed dictionary. Tapping one searches it.
+    private static func suggestions(_ outcome: SearchResults) -> String {
+        guard !outcome.startingWith.isEmpty else { return "" }
+        var html = section(tr("Parole che iniziano con «{0}»", outcome.startingWithText))
+        html += "<nav class=\"starts\">"
+        for word in outcome.startingWith {
+            html += "<a class=\"start\" href=\"kotoba://search?q=\(percent(word.expression))\">"
+            html += "<span class=\"start-word\" lang=\"ja\">\(GlossaryHTML.escape(word.expression))</span>"
+            if !word.reading.isEmpty { html += "<span class=\"start-reading\" lang=\"ja\">\(GlossaryHTML.escape(word.reading))</span>" }
+            html += "<span class=\"start-gloss\">\(GlossaryHTML.escape(word.gloss))</span></a>"
+        }
+        return html + "</nav>"
+    }
 
     private static func section(_ text: String) -> String {
         "<h2 class=\"section\">\(GlossaryHTML.escape(text))</h2>"
@@ -104,7 +139,8 @@ enum ResultsPage {
             let content: String
             if def.items.count > 1, def.items.allSatisfy({ !$0.contains("<") && $0.count <= 80 }) {
                 // Short plain glosses read best on one line: barrier | obstacle | hurdle.
-                content = "<div class=\"gloss inline\">" + def.items.joined(separator: "<span class=\"sep\"> | </span>") + "</div>"
+                // Each gloss is a unit: it moves to the next line whole instead of breaking after "to".
+                content = "<div class=\"gloss inline\">" + def.items.map { "<span class=\"g\">\($0)</span>" }.joined(separator: " ") + "</div>"
             } else if def.items.count == 1 {
                 content = "<div class=\"gloss\">\(def.items[0])</div>"
             } else {
@@ -256,6 +292,13 @@ enum ResultsPage {
         if (off >= node.data.length) return null;
         return {node, off};
       }
+      // The recording takes a moment to arrive: show that the tap was felt.
+      document.addEventListener('click', function(e){
+        const b = e.target.closest('.btn.audio');
+        if (!b) return;
+        b.classList.add('playing');
+        setTimeout(function(){ b.classList.remove('playing'); }, 1600);
+      }, true);
       document.addEventListener('click', function(e){
         if (e.target.closest('a, summary, .mine, rt')) return;
         const hit = charAt(e.clientX, e.clientY);
@@ -295,17 +338,22 @@ enum ResultsPage {
     .entry:last-of-type { border-bottom:none; }
     header { position:relative; }
     .headword { font-family:var(--head-font); font-weight:700; font-size:calc(var(--size) * 2.35); line-height:1.25;
-                margin:0 0 4px; padding-right:96px; letter-spacing:.02em; }
+                margin:0 0 4px; padding-right:100px; letter-spacing:.02em; }
     .headword::before { content:""; display:inline-block; width:.22em; height:.22em; background:var(--shu);
                         vertical-align:.3em; margin-right:.3em; }
     .headword rt { font-family:var(--body-font); font-weight:400; font-size:.3em; color:var(--muted); letter-spacing:.08em; }
     .headword .reading { font-family:var(--body-font); font-weight:400; font-size:.42em; color:var(--muted); margin-left:.4em; }
-    .actions { position:absolute; right:0; top:4px; display:flex; gap:8px; }
-    .btn { width:38px; height:38px; border-radius:19px; display:flex; align-items:center; justify-content:center;
-           color:var(--ink); background:var(--chip); }
+    /* 44 points: the smallest target a thumb hits without aiming. */
+    .actions { position:absolute; right:0; top:0; display:flex; gap:4px; }
+    .btn { width:44px; height:44px; border-radius:22px; display:flex; align-items:center; justify-content:center;
+           color:var(--ink); background:var(--chip); -webkit-tap-highlight-color:transparent; }
+    .btn svg { width:20px; height:20px; }
     .btn.mine { color:var(--shu); }
-    .btn.mine.done { color:var(--muted); background:transparent; box-shadow:inset 0 0 0 1px var(--rule); }
-    .btn.playing { color:var(--paper); background:var(--shu); }
+    /* Already in Anki: a filled seal, not a paler copy of the plus. */
+    .btn.mine.done { color:var(--paper); background:var(--shu); }
+    .btn.playing { color:var(--paper); background:var(--shu); animation:kotoba-pulse .8s ease-in-out 2; }
+    @keyframes kotoba-pulse { 50% { transform:scale(.88); opacity:.75; } }
+    @media (prefers-reduced-motion: reduce) { .btn.playing { animation:none; } }
     .chain { font:12px ui-monospace, Menlo, monospace; color:var(--shu); margin:2px 0 8px; }
 
     .pitches { display:flex; flex-wrap:wrap; gap:4px 16px; align-items:center; font-size:.92em; margin:2px 0 6px; }
@@ -334,7 +382,18 @@ enum ResultsPage {
     ol.gloss { margin:0; padding-left:1.4em; }
     ol.gloss > li { margin:1px 0 5px; }
     ol.gloss > li::marker { color:var(--muted); font-size:.8em; font-variant-numeric:tabular-nums; }
-    .gloss.inline .sep { color:var(--rule); }
+    .gloss.inline .g { display:inline-block; max-width:100%; vertical-align:top; }
+    .gloss.inline .g:not(:last-child)::after { content:"|"; color:var(--muted); opacity:.55; margin-left:.45em; margin-right:.1em; }
+
+    /* Words that start with what was typed: one line each, word · reading · meaning. */
+    .starts { margin:2px 0 10px; }
+    .start { display:flex; align-items:baseline; gap:10px; min-height:44px; padding:7px 0; box-sizing:border-box;
+             border-bottom:1px solid var(--rule); color:var(--ink); }
+    .start:last-child { border-bottom:none; }
+    .start-word { font-family:var(--head-font); font-weight:700; font-size:1.25em; flex:none; }
+    .start-reading { color:var(--muted); font-size:.82em; flex:none; }
+    .start-gloss { color:var(--muted); font-size:.88em; flex:1; min-width:0; text-align:right;
+                   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     details.dict.closed > summary { list-style:none; cursor:pointer; }
     details.dict.closed > summary::-webkit-details-marker { display:none; }
     details.dict.closed > summary::after { content:"＋"; color:var(--shu); margin-left:2px; }

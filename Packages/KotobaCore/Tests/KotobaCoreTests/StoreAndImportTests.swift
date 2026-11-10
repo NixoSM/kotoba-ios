@@ -189,6 +189,39 @@ final class StoreAndImportTests: XCTestCase {
         XCTAssertEqual(try YomitanImporter.importDictionary(at: try makeZip(title: "Stop", files: files), into: store).termCount, 3)
     }
 
+    func testWordsStartingWith() throws {
+        let store = try DictionaryStore(path: ":memory:")
+        let files = ["term_bank_1.json": """
+        [["食べる","たべる","v1","v1",100,["to eat"],1,""],["食べ物","たべもの","n","",90,["food"],2,""],
+         ["食べ放題","たべほうだい","n","",10,["all you can eat"],3,""],["食","しょく","n","",5,["meal"],4,""],
+         ["コーヒー","コーヒー","n","",50,["coffee"],5,""],["猫","ねこ","n","",50,["cat"],6,""]]
+        """]
+        let first = try YomitanImporter.importDictionary(at: try makeZip(title: "A", files: files), into: store)
+        try store.buildMissingKanaIndexes()
+
+        // By spelling: shortest first, the word itself left out.
+        XCTAssertEqual(store.entriesStarting(with: "食").map(\.expression), ["食べる", "食べ物", "食べ放題"])
+        XCTAssertEqual(store.entriesStarting(with: "食べ").map(\.expression), ["食べる", "食べ物", "食べ放題"])
+        // By reading, with the definitions read in.
+        let byReading = store.entriesStarting(with: "たべ")
+        XCTAssertEqual(byReading.map(\.expression), ["食べる", "食べ物", "食べ放題"])
+        XCTAssertEqual(GlossaryText.items(fromJSON: byReading[0].glossaryJSON), ["to eat"])
+        // Hiragana typed for a katakana word.
+        XCTAssertEqual(store.entriesStarting(with: "こー").map(\.expression), ["コーヒー"])
+        XCTAssertEqual(store.entriesStarting(with: "食べ", limit: 2).count, 2)
+        XCTAssertTrue(store.entriesStarting(with: "犬").isEmpty)
+        XCTAssertTrue(store.entriesStarting(with: "").isEmpty)
+
+        try store.setEnabled(false, dictionary: first.id)
+        XCTAssertTrue(store.entriesStarting(with: "食").isEmpty)
+    }
+
+    func testEndOfPrefix() {
+        XCTAssertEqual(DictionaryStore.end(ofPrefix: "ab"), "ac")
+        XCTAssertEqual(DictionaryStore.end(ofPrefix: "食"), "飠")
+        XCTAssertNil(DictionaryStore.end(ofPrefix: ""))
+    }
+
     /// The 2,000 candidates used to be taken from every dictionary and the
     /// switched-off ones removed afterwards: a big one switched off could take
     /// all 2,000 places, and the search came back empty.

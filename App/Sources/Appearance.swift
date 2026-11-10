@@ -1,5 +1,4 @@
-import SwiftUI
-import CoreText
+import Foundation
 import KotobaCore
 
 /// How results look: the same knobs as Yomitan's "Appearance" settings,
@@ -161,32 +160,11 @@ enum FontCatalog {
 
     static func all() -> [FontChoice] { builtIn + custom() }
 
-    #if KOTOBA_EXTENSION
-    /// The app gets its fonts from Info.plist; the share panel registers the
-    /// app's copies itself, once. A font that fails to load falls back to the
-    /// system serif (see `Font.kotoba`).
-    static func registerBundledFonts() {
-        for file in ["ShipporiMincho-Medium.ttf", "ShipporiMincho-Bold.ttf"] {
-            if let url = fileURL(file) { CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil) }
-        }
-    }
-    #endif
-
     /// Called on every redraw of the results: lists the Fonts folder only for fonts you added.
     static func choice(_ id: String) -> FontChoice {
         let fonts = builtIn
         if let found = fonts.first(where: { $0.id == id }) { return found }
         return (id.hasPrefix("file:") ? custom().first { $0.id == id } : nil) ?? fonts[1]
-    }
-
-    /// Copies a font file into the app and returns its id.
-    static func importFont(from url: URL) throws -> String {
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        let target = folder.appendingPathComponent(url.lastPathComponent)
-        try? FileManager.default.removeItem(at: target)
-        try FileManager.default.copyItem(at: url, to: target)
-        return "file:" + url.lastPathComponent
     }
 
     /// The bundle that carries the font files. The share panel has none of
@@ -228,7 +206,7 @@ enum FontCatalog {
             let family = choice.css.trimmingCharacters(in: CharacterSet(charactersIn: "'"))
             for face in choice.faces {
                 let format = face.file.lowercased().hasSuffix(".otf") ? "opentype" : "truetype"
-                css += "@font-face{font-family:'\(family)';font-weight:\(face.weight);src:url('\(MediaSchemeHandler.fontURL(face.file))') format('\(format)');}\n"
+                css += "@font-face{font-family:'\(family)';font-weight:\(face.weight);src:url('\(MediaLink.fontURL(face.file))') format('\(format)');}\n"
             }
         }
         return css
@@ -251,10 +229,13 @@ struct ThemePalette: Identifiable, Hashable {
     let rule: UInt32
     let accent: UInt32
 
+    // Small grey text (readings, tags, dictionary names) and the accent must
+    // stay readable on the paper and on the chips: 4.5 to 1 at least, checked
+    // by ThemeContrastTests. Lighter greys looked finer and could not be read.
     static let all: [ThemePalette] = [
         // Paper and sumi ink, vermilion seal: the printed dictionary.
         ThemePalette(id: "washi", name: "Washi", mark: "紙", dark: false,
-                     paper: 0xF4EEE3, raised: 0xFBF8F2, ink: 0x1D1A16, muted: 0x8A8276, rule: 0xE2D8C6, accent: 0xC23C24),
+                     paper: 0xF4EEE3, raised: 0xFBF8F2, ink: 0x1D1A16, muted: 0x696259, rule: 0xE2D8C6, accent: 0xB33721),
         ThemePalette(id: "sumi", name: "Sumi", mark: "墨", dark: true,
                      paper: 0x13110E, raised: 0x1D1A16, ink: 0xECE4D4, muted: 0x8F877B, rule: 0x2C2823, accent: 0xE2603F),
         // Indigo-dyed cloth with gold thread.
@@ -262,19 +243,19 @@ struct ThemePalette: Identifiable, Hashable {
                      paper: 0x0E1626, raised: 0x152036, ink: 0xE4E8F1, muted: 0x8290AB, rule: 0x233150, accent: 0xE3B25A),
         // Petals on white, plum-coloured ink.
         ThemePalette(id: "sakura", name: "Sakura", mark: "桜", dark: false,
-                     paper: 0xFBF2F3, raised: 0xFFF9FA, ink: 0x34262B, muted: 0x9A7F87, rule: 0xEFD8DD, accent: 0xC94F78),
+                     paper: 0xFBF2F3, raised: 0xFFF9FA, ink: 0x34262B, muted: 0x7A6068, rule: 0xEFD8DD, accent: 0xB43861),
         // Tea-ceremony green, quiet and low contrast.
         ThemePalette(id: "matcha", name: "Matcha", mark: "茶", dark: false,
-                     paper: 0xEDEFE2, raised: 0xF6F7EE, ink: 0x1F2619, muted: 0x7B836C, rule: 0xD6DBC4, accent: 0x4F7A28),
+                     paper: 0xEDEFE2, raised: 0xF6F7EE, ink: 0x1F2619, muted: 0x5F6554, rule: 0xD6DBC4, accent: 0x466C23),
         // Old-book sepia, gentle for long reading.
         ThemePalette(id: "kohaku", name: "Kohaku", mark: "琥", dark: false,
-                     paper: 0xF1E4C8, raised: 0xF7EDD6, ink: 0x3A2C1A, muted: 0x8C7556, rule: 0xDCC9A3, accent: 0x9A4A1F),
+                     paper: 0xF1E4C8, raised: 0xF7EDD6, ink: 0x3A2C1A, muted: 0x6E5C43, rule: 0xDCC9A3, accent: 0x97481E),
         // Shinjuku at 2 a.m.: violet night, neon pink.
         ThemePalette(id: "yoru", name: "Yoru", mark: "夜", dark: true,
-                     paper: 0x0D0C16, raised: 0x171527, ink: 0xE8E6F7, muted: 0x7D7A99, rule: 0x25223B, accent: 0xFF5C8A),
+                     paper: 0x0D0C16, raised: 0x171527, ink: 0xE8E6F7, muted: 0x84819E, rule: 0x25223B, accent: 0xFF5C8A),
         // Fresh snow, cold blue: crisp and modern.
         ThemePalette(id: "yuki", name: "Yuki", mark: "雪", dark: false,
-                     paper: 0xF7F8FA, raised: 0xFFFFFF, ink: 0x15181D, muted: 0x7C8490, rule: 0xE3E6EB, accent: 0x2563C9),
+                     paper: 0xF7F8FA, raised: 0xFFFFFF, ink: 0x15181D, muted: 0x626974, rule: 0xE3E6EB, accent: 0x2563C9),
     ]
 
     /// Shown under the swatch: romanised, or in kanji for Japanese.
@@ -291,10 +272,6 @@ struct ThemePalette: Identifiable, Hashable {
         setting == "auto" ? (named("washi"), named("sumi")) : (named(setting), named(setting))
     }
 
-    static func colorScheme(for setting: String) -> ColorScheme? {
-        setting == "auto" ? nil : (named(setting).dark ? .dark : .light)
-    }
-
     /// CSS custom properties for the results page.
     var cssVariables: String {
         func hex(_ v: UInt32) -> String { "#" + String(format: "%06X", v) }
@@ -308,44 +285,5 @@ struct ThemePalette: Identifiable, Hashable {
             return ":root{color-scheme:light dark;\(p.light.cssVariables)}@media (prefers-color-scheme: dark){:root{\(p.dark.cssVariables)}}"
         }
         return ":root{color-scheme:\(p.light.dark ? "dark" : "light");\(p.light.cssVariables)}"
-    }
-}
-
-/// The app's colours, following the chosen theme.
-enum Palette {
-    nonisolated(unsafe) private static var current = ThemePalette.pair(for: "auto")
-
-    static func apply(_ setting: String) { current = ThemePalette.pair(for: setting) }
-
-    static var paper: Color { color(\.paper) }
-    static var raised: Color { color(\.raised) }
-    static var ink: Color { color(\.ink) }
-    static var muted: Color { color(\.muted) }
-    static var rule: Color { color(\.rule) }
-    static var shu: Color { color(\.accent) }
-
-    private static func color(_ key: KeyPath<ThemePalette, UInt32>) -> Color {
-        let pair = current
-        return Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: pair.dark[keyPath: key]) : UIColor(hex: pair.light[keyPath: key]) })
-    }
-}
-
-extension UIColor {
-    convenience init(hex: UInt32) {
-        self.init(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
-                  blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
-    }
-}
-
-extension Font {
-    /// A bundled font for the app's own screens, falling back to the system serif.
-    static func kotoba(_ postScriptName: String, size: CGFloat, relativeTo style: Font.TextStyle = .body) -> Font {
-        UIFont(name: postScriptName, size: size) != nil
-            ? .custom(postScriptName, size: size, relativeTo: style)
-            : .system(size: size, design: .serif)
-    }
-
-    static func mincho(_ size: CGFloat, bold: Bool = false, relativeTo style: Font.TextStyle = .body) -> Font {
-        kotoba(bold ? "ShipporiMincho-Bold" : "ShipporiMincho-Medium", size: size, relativeTo: style)
     }
 }

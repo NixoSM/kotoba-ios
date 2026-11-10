@@ -605,6 +605,51 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         }
     }
 
+    // MARK: Words that start with… (the search box)
+
+    /// Headwords whose spelling or reading starts with `prefix`, shortest
+    /// first, from switched-on dictionaries. A word that is exactly `prefix`
+    /// is left out: `entries(matching:)` finds that one.
+    public func entriesStarting(with prefix: String, limit: Int = 200) -> [TermEntry] {
+        guard !prefix.isEmpty, let end = Self.end(ofPrefix: prefix) else { return [] }
+        let headers: [TermEntry] = locked {
+            var out: [TermEntry] = []
+            // Three walks along three indexes. Definitions are read afterwards,
+            // for the rows that are kept: sorting thousands of them would be slow.
+            let hira = kanaIndexReady ? " UNION SELECT id FROM terms WHERE reading_hira >= ?1 AND reading_hira < ?2" : ""
+            do {
+                try cached("""
+                SELECT \(Self.headerColumns(glossary: false))
+                FROM terms t JOIN dictionaries d ON d.id = t.dict_id
+                WHERE d.enabled = 1 AND t.id IN (
+                    SELECT id FROM terms WHERE expression >= ?1 AND expression < ?2
+                    UNION SELECT id FROM terms WHERE reading >= ?1 AND reading < ?2\(hira))
+                  AND t.expression != ?1 AND t.reading != ?1
+                ORDER BY length(t.expression), d.priority, t.score DESC, t.id
+                LIMIT ?3
+                """).bind(prefix, end, limit).rows { out.append(Self.entry($0)) }
+            } catch {
+                return []
+            }
+            return out
+        }
+        return loadGlossaries(headers)
+    }
+
+    /// The first string that no longer starts with `prefix`: the prefix with
+    /// its last character moved one step on. Rows between the two start with it.
+    static func end(ofPrefix prefix: String) -> String? {
+        var scalars = Array(prefix.unicodeScalars)
+        while let last = scalars.popLast() {
+            let next = last.value == 0xD7FF ? 0xE000 : last.value + 1
+            if let scalar = Unicode.Scalar(next) {
+                scalars.append(scalar)
+                return String(String.UnicodeScalarView(scalars))
+            }
+        }
+        return nil
+    }
+
     /// Columns read by `entry(_:)`, in order.
     private static func headerColumns(glossary: Bool) -> String {
         "t.expression, t.reading, t.rules, t.score, t.definition_tags, t.term_tags, t.sequence, "

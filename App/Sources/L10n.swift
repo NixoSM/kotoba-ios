@@ -85,7 +85,9 @@ enum L10n {
         // Results
         "Letto come {0}": ("Read as {0}", "{0} として"),
         "Parole che significano «{0}»": ("Words meaning “{0}”", "「{0}」を意味する語"),
+        "Parole che iniziano con «{0}»": ("Words that start with “{0}”", "「{0}」で始まる語"),
         "{0} parole · {1} ms": ("{0} words · {1} ms", "{0} 語 · {1} ms"),
+        "1 parola · {0} ms": ("1 word · {0} ms", "1 語 · {0} ms"),
         "Ascolta": ("Listen", "再生"),
         "Già in Anki": ("Already in Anki", "Anki に追加済み"),
         "Aggiungi ad Anki": ("Add to Anki", "Anki に追加"),

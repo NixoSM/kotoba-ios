@@ -21,7 +21,7 @@ struct SearchView: View {
                     EmptyLibrary()
                 } else if query.trimmingCharacters(in: .whitespaces).isEmpty {
                     HomeView(onSearch: search)
-                } else if !searching && outcome.direct.isEmpty && outcome.byMeaning.isEmpty {
+                } else if !searching && outcome.isEmpty {
                     NoResults(query: query)
                 } else {
                     ResultsPane(outcome: outcome, query: query, indexStatus: model.reverseIndexStatus,
@@ -55,7 +55,7 @@ struct SearchView: View {
                 // Small pause so we don't search on every keystroke.
                 try? await Task.sleep(for: .milliseconds(120))
                 guard !Task.isCancelled else { return }
-                let result = await model.search(query)
+                let result = await model.search(query, suggestions: true)
                 // A newer query took over while this one ran: its results would be stale.
                 guard !Task.isCancelled else { return }
                 outcome = result

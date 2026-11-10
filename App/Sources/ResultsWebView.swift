@@ -96,22 +96,9 @@ struct ResultsWebView: UIViewRepresentable {
 /// Serves images stored inside dictionaries to the results page.
 final class MediaSchemeHandler: NSObject, WKURLSchemeHandler {
     static let shared = MediaSchemeHandler()
-    static let scheme = "kotoba-media"
+    static let scheme = MediaLink.scheme
     /// Set once at launch.
     nonisolated(unsafe) static var store: DictionaryStore?
-
-    /// A font file, bundled or added by the user.
-    static func fontURL(_ file: String) -> String {
-        scheme + "://font/" + (file.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? file)
-    }
-
-    static func url(dictionary: String, path: String) -> String {
-        var c = URLComponents()
-        c.scheme = scheme
-        c.host = "m"
-        c.queryItems = [URLQueryItem(name: "d", value: dictionary), URLQueryItem(name: "p", value: path)]
-        return c.string ?? ""
-    }
 
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         if let url = task.request.url, url.host == "font" {
