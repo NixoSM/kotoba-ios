@@ -154,6 +154,13 @@ final class AppModel {
 
     /// Applies a Yomitan backup: dictionary order and switches, sort dictionary, Anki note.
     func importYomitanSettings(from url: URL) {
+        // The order and the switches are written in the database, which an
+        // import holds for minutes: this would wait, then fail. And the
+        // dictionaries still on their way could not be put in order yet.
+        guard !isBusy else {
+            errorMessage = tr("Le impostazioni di Yomitan si applicano ai dizionari già importati. Aspetta che Kotoba finisca di scriverli, poi riprova.")
+            return
+        }
         let opened = PickedFile.open(url)
         defer { PickedFile.close(url, opened: opened) }
         do {
@@ -184,7 +191,8 @@ final class AppModel {
             Diagnostics.shared.log("Yomitan settings applied")
             errorMessage = report.joined(separator: "\n\n")
         } catch {
-            self.report(tr("Non riesco a leggere questo backup di Yomitan: {0}", error.localizedDescription), log: "Yomitan settings failed: \(error)")
+            let reason = error is YomitanSettings.ParseError ? tr("il file non contiene impostazioni di Yomitan") : error.localizedDescription
+            self.report(tr("Non riesco a leggere questo backup di Yomitan: {0}", reason), log: "Yomitan settings failed: \(error)")
         }
     }
 
@@ -252,7 +260,13 @@ final class AppModel {
 
     /// Imports the files one after the other. More can be added while it runs.
     func importDictionaries(from urls: [URL]) {
-        guard store != nil, !urls.isEmpty else { return }
+        guard !urls.isEmpty else { return }
+        guard store != nil else {
+            errorMessage = tr("I dizionari non sono disponibili: il database non si è aperto. Chiudi e riapri Kotoba; i dettagli sono in Impostazioni › Diagnostica.")
+            return
+        }
+        // A delete holds the database: the import would wait for it, then fail.
+        guard deleting == nil else { return busyNote() }
         // Permission to read a picked file is asked for now, while the choice is fresh.
         let files = urls.map { QueuedFile(url: $0, opened: PickedFile.open($0)) }
         importQueue += files
@@ -333,9 +347,7 @@ final class AppModel {
         importQueue = []
         LongWork.end()
         if imported.count == 1, let one = imported.first {
-            importStatus = .finished(summary: one.termCount == 0 && one.kanjiCount > 0
-                ? tr("{0}: {1} kanji importati", one.title, one.kanjiCount)
-                : tr("{0}: {1} voci importate", one.title, one.termCount))
+            importStatus = .finished(summary: Self.summary(of: one))
         } else if imported.count > 1 {
             importStatus = .finished(summary: tr("{0} dizionari importati", imported.count))
         } else {
@@ -352,6 +364,15 @@ final class AppModel {
         importCancel.reset()
     }
 
+    /// What one imported dictionary brought: words, or what it holds instead
+    /// of words (a frequency list has none, and "0 voci" would read as a failure).
+    nonisolated static func summary(of d: InstalledDictionary) -> String {
+        if d.termCount > 0 { return tr("{0}: {1} voci importate", d.title, d.termCount) }
+        if d.kanjiCount > 0 { return tr("{0}: {1} kanji importati", d.title, d.kanjiCount) }
+        if d.metaCount > 0 { return tr("{0}: {1} frequenze e accenti importati", d.title, d.metaCount) }
+        return tr("{0}: {1} voci importate", d.title, 0)
+    }
+
     func clearImportSummary() {
         if case .finished = importStatus { importStatus = nil }
     }
@@ -361,14 +382,24 @@ final class AppModel {
         case DictionaryStoreError.alreadyInstalled(let title): tr("「{0}」 è già installato.", title)
         case YomitanImportError.missingIndex: tr("Questo file non sembra un dizionario Yomitan (manca index.json).")
         case YomitanImportError.unsupportedFormat(let v): tr("Formato di dizionario {0} non supportato.", v)
+        case YomitanImportError.unreadableZip(let detail):
+            tr("Non riesco a leggere questo file .zip: è rovinato o lo scaricamento non è finito. Scaricalo di nuovo. ({0})", detail)
+        case YomitanFormatError.notAnArray(let file), YomitanFormatError.badRow(let file, _):
+            tr("Il file {0} del dizionario non è nel formato di Yomitan.", file)
         default: tr("Import fallito: {0}", error.localizedDescription)
         }
     }
 
     // MARK: Dictionaries
 
+    /// The screens switch these controls off meanwhile; if one gets through, it says why nothing happens.
+    private func busyNote() {
+        toast = tr("Aspetta che Kotoba finisca di scrivere i dizionari")
+    }
+
     func setEnabled(_ enabled: Bool, for dictionary: InstalledDictionary) {
-        guard let store, !isBusy else { return }
+        guard let store else { return }
+        guard !isBusy else { return busyNote() }
         do {
             try store.setEnabled(enabled, dictionary: dictionary.id)
         } catch {
@@ -379,7 +410,8 @@ final class AppModel {
     }
 
     func move(from source: IndexSet, to destination: Int) {
-        guard let store, !isBusy else { return }
+        guard let store else { return }
+        guard !isBusy else { return busyNote() }
         var ids = dictionaries.map(\.id)
         // The same as Array.move(fromOffsets:toOffset:), which only SwiftUI has.
         let moving = source.sorted().filter { ids.indices.contains($0) }.map { ids[$0] }
@@ -397,7 +429,8 @@ final class AppModel {
     /// Removes a dictionary. Large ones take seconds, so the work happens
     /// away from the screen; `deleting` says which one meanwhile.
     func delete(_ dictionary: InstalledDictionary) {
-        guard let store, !isBusy else { return }
+        guard let store else { return }
+        guard !isBusy else { return busyNote() }
         deleting = dictionary.title
         LongWork.begin {}
         Diagnostics.shared.log("Delete started: \(dictionary.title)")

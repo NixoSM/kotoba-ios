@@ -15,8 +15,12 @@ struct WordsView: View {
         let all = WordIndex.words(mined: model.settings.mined, dates: model.settings.minedDates)
         let text = filter.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return all }
-        let kana = Kana.toHiragana(text)
-        return all.filter { $0.expression.contains(text) || Kana.toHiragana($0.reading).contains(kana) }
+        // Kana either way, or romaji as in the search box (neko → ねこ).
+        let kana = [Kana.toHiragana(text)] + Romaji.readings(text)
+        return all.filter { word in
+            let reading = Kana.toHiragana(word.reading.isEmpty ? word.expression : word.reading)
+            return word.expression.contains(text) || kana.contains { reading.contains($0) }
+        }
     }
 
     var body: some View {

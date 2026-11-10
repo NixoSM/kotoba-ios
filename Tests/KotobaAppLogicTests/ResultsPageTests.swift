@@ -72,6 +72,22 @@ final class ResultsPageTests: XCTestCase {
         XCTAssertEqual(html.components(separatedBy: "<script nonce=\"\(ResultsPage.scriptNonce)\">").count - 1, 2)
     }
 
+    /// A Yomitan backup may name a frequency dictionary this phone does not
+    /// have: the results then lost their order without a word.
+    func testASortDictionaryThatIsNotThereFallsBackToTheFirstAvailable() throws {
+        let store = try Fixtures.store()
+        func ranks(_ sort: String?) -> [Double?] {
+            SearchEngine.run(SearchEngine.Request(text: "食べる", sortDictionary: sort), store: store, scanner: TextScanner()).direct.map(\.sortRank)
+        }
+        XCTAssertEqual(ranks("Frequenze").first, 400)
+        XCTAssertEqual(ranks(nil).first, 400)
+        XCTAssertEqual(ranks("JPDB che non ho").first, 400, "falls back instead of sorting by nothing")
+        // Switched off: it cannot order anything either.
+        let frequenze = try XCTUnwrap(try store.dictionaries().first { $0.title == "Frequenze" })
+        try store.setEnabled(false, dictionary: frequenze.id)
+        XCTAssertEqual(ranks("Frequenze").first, .some(nil))
+    }
+
     /// Your own CSS stays inside its <style> element whatever it holds.
     func testYourOwnCSSCannotSpillOntoThePage() throws {
         var options = ResultsPage.Options()

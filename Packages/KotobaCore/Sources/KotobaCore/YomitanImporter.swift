@@ -14,6 +14,9 @@ public enum YomitanImportError: Error, Equatable {
     case unsupportedFormat(Int)
     /// Stopped on request: nothing was installed.
     case cancelled
+    /// The .zip cannot be read: damaged, or a download that did not finish.
+    /// Carries the archive library's own word for it, for the diary.
+    case unreadableZip(String)
 }
 
 /// Reads a Yomitan dictionary `.zip` and installs it into a `DictionaryStore`.
@@ -29,7 +32,12 @@ public enum YomitanImporter {
         progress: (ImportProgress) -> Void = { _ in },
         isCancelled: () -> Bool = { false }
     ) throws -> InstalledDictionary {
-        let archive = try Archive(url: url, accessMode: .read)
+        let archive: Archive
+        do {
+            archive = try Archive(url: url, accessMode: .read)
+        } catch {
+            throw YomitanImportError.unreadableZip("\(error)")
+        }
 
         // One pass over the file list. `archive[path]` starts again from the
         // first file every time, so asking it for each of N pictures took N²
@@ -109,7 +117,12 @@ public enum YomitanImporter {
 
     private static func read(_ entry: Entry, from archive: Archive) throws -> Data {
         var data = Data()
-        _ = try archive.extract(entry, skipCRC32: false) { chunk in data.append(chunk) }
+        do {
+            _ = try archive.extract(entry, skipCRC32: false) { chunk in data.append(chunk) }
+        } catch {
+            // A file inside that does not match its checksum, or stops short.
+            throw YomitanImportError.unreadableZip("\(entry.path): \(error)")
+        }
         return data
     }
 

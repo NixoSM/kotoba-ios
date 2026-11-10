@@ -40,7 +40,10 @@ struct SettingsView: View {
                             guard on else { model.settings.screenshotLookup = false; return }
                             PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
                                 Task { @MainActor in
-                                    model.settings.screenshotLookup = status == .authorized || status == .limited
+                                    let allowed = status == .authorized || status == .limited
+                                    model.settings.screenshotLookup = allowed
+                                    // The switch goes back off: say why.
+                                    if !allowed { model.errorMessage = tr("Kotoba non può vedere le foto: Impostazioni › App › Kotoba › Foto.") }
                                 }
                             }
                         })) {
@@ -83,6 +86,11 @@ struct SettingsView: View {
                     Picker(tr("Dizionario di frequenza"), selection: $model.settings.sortFrequencyDictionary) {
                         Text(tr("Il primo disponibile")).tag(String?.none)
                         ForEach(frequencyDictionaries, id: \.self) { Text($0).tag(String?.some($0)) }
+                        // Chosen (or named by a Yomitan backup) but not on this phone, or switched
+                        // off: still listed, so the choice shows. Meanwhile the first available is used.
+                        if let chosen = model.settings.sortFrequencyDictionary, !frequencyDictionaries.contains(chosen) {
+                            Text(tr("{0} (non disponibile)", chosen)).tag(String?.some(chosen))
+                        }
                     }
                 }
 

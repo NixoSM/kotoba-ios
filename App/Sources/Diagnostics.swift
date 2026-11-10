@@ -11,7 +11,6 @@ final class Diagnostics: @unchecked Sendable {
     static let limit = 300
     private let lock = NSLock()
     private var lines: [String] = []
-    private var loaded = false
     /// "app" or "share": two programs write the same diary.
     var source = "app"
 
@@ -24,12 +23,14 @@ final class Diagnostics: @unchecked Sendable {
         return f
     }()
 
-    /// Call while holding the lock.
-    private func loadIfNeeded() {
-        guard !loaded else { return }
-        loaded = true
+    /// Call while holding the lock. The file is read every time: the share
+    /// panel is another program writing the same diary, and a copy kept in
+    /// memory here would write over its lines with this program's next one.
+    private func load() {
         if let text = try? String(contentsOf: file, encoding: .utf8) {
             lines = Array(text.split(separator: "\n").map(String.init).suffix(Self.limit))
+        } else if !FileManager.default.fileExists(atPath: file.path) {
+            lines = []
         }
     }
 
@@ -50,7 +51,7 @@ final class Diagnostics: @unchecked Sendable {
     func log(_ message: String, at date: Date = Date()) {
         lock.lock()
         defer { lock.unlock() }
-        loadIfNeeded()
+        load()
         // One line per event, so the diary stays a list.
         let flat = message.replacingOccurrences(of: "\n", with: " ⏎ ")
         lines.append("\(Self.stamp.string(from: date)) [\(source)] \(flat)")
@@ -62,24 +63,15 @@ final class Diagnostics: @unchecked Sendable {
     var entries: [String] {
         lock.lock()
         defer { lock.unlock() }
-        loadIfNeeded()
+        load()
         return lines
     }
 
     func clear() {
         lock.lock()
         defer { lock.unlock() }
-        loaded = true
         lines = []
         try? FileManager.default.removeItem(at: file)
-    }
-
-    /// Forget what is in memory and read the file again (tests; the other program may have written).
-    func reload() {
-        lock.lock()
-        loaded = false
-        lines = []
-        lock.unlock()
     }
 }
 

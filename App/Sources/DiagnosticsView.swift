@@ -60,8 +60,6 @@ struct DiagnosticsView: View {
     }
 
     private func reload() {
-        // The share panel writes in the same diary from another process.
-        Diagnostics.shared.reload()
         report = model.diagnosticsReport(device: AppModel.deviceFacts)
     }
 }

@@ -67,6 +67,71 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.dictionaries.first?.kanjiCount, 3)
     }
 
+    /// A frequency list holds no words: "0 voci importate" read like a failure.
+    func testAFrequencyDictionarySaysWhatItBrought() async throws {
+        let model = try model()
+        model.importDictionary(from: try Fixtures.dictionaryFile("Frequenze", extra: ["term_meta_bank_1.json": Fixtures.frequencies]))
+        try await wait(for: "the import") { !model.isImporting }
+        XCTAssertEqual(model.importStatus, .finished(summary: "Frequenze: 9 frequenze e accenti importati"))
+        XCTAssertNil(model.errorMessage)
+    }
+
+    /// A download that did not finish, or a file that is not a .zip at all,
+    /// used to answer "the operation couldn't be completed".
+    func testAFileThatIsNotAZipSaysSo() async throws {
+        let model = try model()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("kotoba-fixtures-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let half = folder.appendingPathComponent("Mezzo.zip")
+        let whole = try Data(contentsOf: try Fixtures.dictionaryFile("Mezzo", terms: Fixtures.italian))
+        try whole.prefix(whole.count / 2).write(to: half)
+        let bad = try Fixtures.dictionaryFile("Storto", extra: ["term_bank_1.json": #"{"not":"a list"}"#])
+        model.importDictionaries(from: [half, bad])
+        try await wait(for: "the imports") { !model.isImporting }
+        XCTAssertEqual(titles(model), [])
+        let message = try XCTUnwrap(model.errorMessage)
+        XCTAssertTrue(message.contains("Mezzo: Non riesco a leggere questo file .zip"), message)
+        XCTAssertTrue(message.contains("Storto: Il file term_bank_1.json del dizionario non è nel formato di Yomitan."), message)
+        XCTAssertFalse(message.contains("Import fallito"), message)
+    }
+
+    /// The first-run screen suggests the Yomitan backup right after the
+    /// dictionaries. Done while they were still importing, it froze the app
+    /// for five seconds and then blamed the backup.
+    func testYomitanSettingsWaitForTheImportToEnd() async throws {
+        let model = try model(onDisk: true)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("kotoba-fixtures-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let backup = folder.appendingPathComponent("yomitan-settings.json")
+        try Data(#"{"options":{"profileCurrent":0,"profiles":[{"name":"Default","options":{"general":{"fontSize":22},"dictionaries":[{"name":"Grande","enabled":false}]}}]}}"#.utf8).write(to: backup)
+
+        model.importDictionary(from: try Fixtures.dictionaryFile("Grande", terms: Fixtures.italian, banks: 40))
+        let started = Date()
+        model.importYomitanSettings(from: backup)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1, "it answers at once instead of waiting for the database")
+        XCTAssertTrue(try XCTUnwrap(model.errorMessage).hasPrefix("Le impostazioni di Yomitan si applicano ai dizionari già importati"))
+        XCTAssertNotEqual(model.settings.appearance.fontSize, 22, "nothing was applied by halves")
+        model.errorMessage = nil
+        // Deleting or switching a dictionary meanwhile says why nothing happens.
+        try await wait(for: "the import") { !model.isImporting }
+        let grande = try XCTUnwrap(model.dictionaries.first)
+        model.importDictionary(from: try Fixtures.dictionaryFile("Altro", terms: Fixtures.italian, banks: 40))
+        model.delete(grande)
+        XCTAssertEqual(model.toast, "Aspetta che Kotoba finisca di scrivere i dizionari")
+        XCTAssertNil(model.deleting)
+        try await wait(for: "the second import") { !model.isImporting }
+
+        // Afterwards the same backup applies.
+        model.importYomitanSettings(from: backup)
+        XCTAssertEqual(model.settings.appearance.fontSize, 22)
+        XCTAssertEqual(model.dictionaries.first { $0.title == "Grande" }?.enabled, false)
+        // Not a backup at all.
+        model.errorMessage = nil
+        try Data(#"{"ciao":1}"#.utf8).write(to: backup)
+        model.importYomitanSettings(from: backup)
+        XCTAssertEqual(model.errorMessage, "Non riesco a leggere questo backup di Yomitan: il file non contiene impostazioni di Yomitan")
+    }
+
     /// Before, one import at a time and the second pick replaced the first's progress.
     func testABadFileDoesNotStopTheOthers() async throws {
         let model = try model()
@@ -280,13 +345,30 @@ final class DiagnosticsTests: XCTestCase {
         XCTAssertEqual(diary.entries.count, Diagnostics.limit)
         XCTAssertTrue(diary.entries.last?.hasSuffix("event \(Diagnostics.limit + 20)") ?? false)
         // What a new launch reads from the file.
-        diary.reload()
-        XCTAssertEqual(diary.entries.count, Diagnostics.limit)
-        XCTAssertTrue(diary.entries.first?.hasSuffix("event 21") ?? false)
+        XCTAssertEqual(Diagnostics().entries.count, Diagnostics.limit)
+        XCTAssertTrue(Diagnostics().entries.first?.hasSuffix("event 21") ?? false)
         diary.clear()
-        diary.reload()
-        XCTAssertEqual(diary.entries, [])
+        XCTAssertEqual(Diagnostics().entries, [])
         XCTAssertEqual(DiagnosticsReport(facts: [("Version", "1")], log: []).text, "Kotoba\nVersion: 1\n\n(log empty)\n")
+    }
+
+    /// The app and the share panel are two programs writing one diary. Each
+    /// used to write the file from its own memory, so the app's next line
+    /// erased whatever the panel had written since the app started.
+    func testTwoProgramsWriteTheSameDiaryWithoutErasingEachOther() {
+        let app = Diagnostics.shared
+        app.clear()
+        app.log("app one")
+        let panel = Diagnostics()
+        panel.source = "share"
+        panel.log("panel one")
+        app.log("app two")
+        panel.log("panel two")
+        let lines = app.entries.map { String($0.drop { $0 != "[" }) }
+        XCTAssertEqual(lines, ["[app] app one", "[share] panel one", "[app] app two", "[share] panel two"])
+        XCTAssertEqual(panel.entries, app.entries)
+        app.clear()
+        XCTAssertEqual(panel.entries, [])
     }
 }
 

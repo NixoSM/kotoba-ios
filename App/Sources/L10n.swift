@@ -171,6 +171,7 @@ enum L10n {
         "Sito del dizionario": ("Dictionary website", "辞書のサイト"),
         "Informazioni": ("About", "情報"),
         "{0}: {1} kanji importati": ("{0}: {1} kanji imported", "{0}：漢字 {1} 字を読み込みました"),
+        "{0}: {1} frequenze e accenti importati": ("{0}: {1} frequencies and pitch accents imported", "{0}：頻度・アクセント {1} 件を読み込みました"),
         "{0} dizionari importati": ("{0} dictionaries imported", "{0} 冊の辞書を読み込みました"),
 
         // Settings
@@ -188,6 +189,7 @@ enum L10n {
         "Ordinamento dei risultati": ("Result sorting", "検索結果の並び順"),
         "Dizionario di frequenza": ("Frequency dictionary", "頻度辞書"),
         "Il primo disponibile": ("First available", "最初に見つかったもの"),
+        "{0} (non disponibile)": ("{0} (not available)", "{0}（利用不可）"),
         "Configura una nota Anki a mano": ("Set up an Anki note manually", "Anki のノートを手動で設定"),
         "Mazzo": ("Deck", "デッキ"),
         "Tipo di nota": ("Note type", "ノートタイプ"),
@@ -310,6 +312,18 @@ enum L10n {
         "Questo file non sembra un dizionario Yomitan (manca index.json).": ("This file doesn't look like a Yomitan dictionary (index.json is missing).", "Yomitan 形式の辞書ではないようです（index.json がありません）。"),
         "Formato di dizionario {0} non supportato.": ("Dictionary format {0} isn't supported.", "辞書の形式 {0} には対応していません。"),
         "Import fallito: {0}": ("Import failed: {0}", "読み込みに失敗しました：{0}"),
+        "Non riesco a leggere questo file .zip: è rovinato o lo scaricamento non è finito. Scaricalo di nuovo. ({0})":
+            ("Can't read this .zip file: it is damaged or the download didn't finish. Download it again. ({0})",
+             "この .zip ファイルを読み込めません。破損しているか、ダウンロードが完了していません。もう一度ダウンロードしてください。（{0}）"),
+        "Il file {0} del dizionario non è nel formato di Yomitan.": ("The dictionary's file {0} isn't in Yomitan's format.", "辞書内のファイル {0} が Yomitan の形式ではありません。"),
+        "il file non contiene impostazioni di Yomitan": ("the file holds no Yomitan settings", "ファイルに Yomitan の設定が含まれていません"),
+        "Le impostazioni di Yomitan si applicano ai dizionari già importati. Aspetta che Kotoba finisca di scriverli, poi riprova.":
+            ("Yomitan's settings apply to dictionaries already imported. Wait until Kotoba has finished writing them, then try again.",
+             "Yomitan の設定は読み込み済みの辞書に適用されます。辞書の書き込みが終わってから、もう一度お試しください。"),
+        "I dizionari non sono disponibili: il database non si è aperto. Chiudi e riapri Kotoba; i dettagli sono in Impostazioni › Diagnostica.":
+            ("The dictionaries aren't available: the database didn't open. Close and reopen Kotoba; the details are in Settings › Diagnostics.",
+             "辞書を利用できません：データベースを開けませんでした。Kotoba を閉じて開き直してください。詳細は「設定 › 診断」にあります。"),
+        "Aspetta che Kotoba finisca di scrivere i dizionari": ("Wait until Kotoba has finished writing the dictionaries", "辞書の書き込みが終わるまでお待ちください"),
 
         "L'importazione è stata interrotta perché Kotoba è passato in secondo piano. Riprovala tenendo l'app aperta: lo schermo resta acceso da solo.":
             ("The import was stopped because Kotoba went to the background. Try again keeping the app open: the screen stays on by itself.",

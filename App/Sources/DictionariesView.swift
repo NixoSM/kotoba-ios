@@ -274,12 +274,18 @@ struct DictionaryDetailView: View {
         .deleteConfirmation(for: $pendingDelete)
         .onAppear {
             index = model.store?.index(ofDictionary: id)
-            hasFrequencies = dictionary.map { model.store?.frequencyDictionaries().contains($0.title) ?? false } ?? false
+            checkFrequencies()
         }
+        // Only a dictionary that is switched on can order the results.
+        .onChange(of: dictionary?.enabled) { _, _ in checkFrequencies() }
         // Deleted (from here or elsewhere): there is nothing left to show.
         .onChange(of: dictionary == nil) { _, gone in
             if gone { dismiss() }
         }
+    }
+
+    private func checkFrequencies() {
+        hasFrequencies = dictionary.map { model.store?.frequencyDictionaries().contains($0.title) ?? false } ?? false
     }
 
     @ViewBuilder

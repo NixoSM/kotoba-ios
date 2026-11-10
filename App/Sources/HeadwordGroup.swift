@@ -61,7 +61,11 @@ struct HeadwordGroup: Identifiable, Sendable {
     /// Adds frequencies and pitch accents, keeping only those for this reading.
     static func attachMeta(_ groups: inout [HeadwordGroup], from store: DictionaryStore, sortDictionary: String?) {
         let bundle = store.termMeta(for: Array(Set(groups.map(\.expression))))
-        let sortDictionary = sortDictionary ?? store.frequencyDictionaries().first
+        // The one chosen, while it is installed and switched on. A name that
+        // came with a Yomitan backup may be of a dictionary this phone does
+        // not have: results would then lose their order without a word.
+        let available = store.frequencyDictionaries()
+        let sortDictionary = sortDictionary.flatMap { available.contains($0) ? $0 : nil } ?? available.first
         for i in groups.indices {
             let reading = Kana.toHiragana(groups[i].reading)
             groups[i].frequencies = onePerDictionary((bundle.frequencies[groups[i].expression] ?? []).filter {

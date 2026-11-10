@@ -322,6 +322,22 @@ final class StoreAndImportTests: XCTestCase {
         XCTAssertEqual(heard.all.count, 3)
     }
 
+    /// A download cut short is the commonest bad file. It is told apart from
+    /// "not a dictionary", and nothing of it is installed.
+    func testAZipCutShortIsReportedAsSuchAndLeavesNothing() throws {
+        let store = try DictionaryStore(path: ":memory:")
+        let whole = try Data(contentsOf: try makeZip(title: "A", files: jmdict))
+        let half = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".zip")
+        defer { try? FileManager.default.removeItem(at: half) }
+        for cut in [whole.count / 2, 10, 0] {
+            try whole.prefix(cut).write(to: half)
+            XCTAssertThrowsError(try YomitanImporter.importDictionary(at: half, into: store), "cut at \(cut)") { error in
+                guard case YomitanImportError.unreadableZip = error else { return XCTFail("cut at \(cut): \(error)") }
+            }
+        }
+        XCTAssertEqual(try store.dictionaries().count, 0)
+    }
+
     func testWordsStartingWith() throws {
         let store = try DictionaryStore(path: ":memory:")
         let files = ["term_bank_1.json": """
