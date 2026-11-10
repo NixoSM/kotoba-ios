@@ -67,6 +67,14 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.dictionaries.first?.kanjiCount, 3)
     }
 
+    /// The database did not open: picking files used to do nothing at all.
+    func testImportingWithNoDatabaseSaysSo() throws {
+        let model = AppModel(store: nil, settings: italianSettings())
+        model.importDictionary(from: try Fixtures.dictionaryFile("Uno", terms: Fixtures.italian))
+        XCTAssertFalse(model.isImporting)
+        XCTAssertTrue(try XCTUnwrap(model.errorMessage).hasPrefix("I dizionari non sono disponibili"))
+    }
+
     /// A frequency list holds no words: "0 voci importate" read like a failure.
     func testAFrequencyDictionarySaysWhatItBrought() async throws {
         let model = try model()
