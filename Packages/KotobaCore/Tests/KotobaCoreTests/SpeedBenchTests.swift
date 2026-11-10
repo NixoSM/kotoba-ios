@@ -120,6 +120,12 @@ final class SpeedBenchTests: XCTestCase {
         let commonMs = time { for _ in 0..<10 { _ = store.reverseSearch("meaning") } }
         say(String(format: "BENCH engine reverse search, word in every definition (worst case): %.1f ms per query", commonMs / 10))
 
+        // With a dictionary switched off, each candidate is checked against its dictionary first.
+        let extra = try store.install(index: DictionaryIndex(title: "Off", revision: "1", format: 3)) { _ in }
+        try store.setEnabled(false, dictionary: extra.id)
+        let filteredMs = time { for _ in 0..<10 { _ = store.reverseSearch("meaning") } }
+        say(String(format: "BENCH engine reverse search, worst case with one dictionary switched off: %.1f ms per query", filteredMs / 10))
+
         let size = ["", "-wal"].reduce(0) { total, suffix in
             total + ((try? FileManager.default.attributesOfItem(atPath: path + suffix)[.size] as? Int) ?? 0)
         }

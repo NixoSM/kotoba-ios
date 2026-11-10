@@ -142,5 +142,68 @@ final class StoreAndImportTests: XCTestCase {
         XCTAssertTrue(html.contains(#"src="m://img/bird.png""#), html)
         XCTAssertTrue(html.contains("width:2em"), html)
     }
+
+    /// Looking each picture up by name restarted from the first file every
+    /// time: 8,000 pictures took over two minutes. Found in one pass now.
+    func testManyPicturesImportInOnePass() throws {
+        let store = try DictionaryStore(path: ":memory:")
+        var files = ["term_bank_1.json": #"[["鳥","とり","n","",0,["bird"],1,""]]"#]
+        for i in 0..<3000 { files["img/\(i).png"] = "P\(i)" }
+        let zip = try makeZip(title: "Pics", files: files)
+        var steps: [ImportProgress] = []
+        let start = Date()
+        _ = try YomitanImporter.importDictionary(at: zip, into: store) { steps.append($0) }
+        let seconds = Date().timeIntervalSince(start)
+        XCTAssertLessThan(seconds, 20, "3,000 pictures took \(seconds) s")
+        XCTAssertEqual(store.media(dictionary: "Pics", path: "img/2999.png"), Data("P2999".utf8))
+        // One bank and 3,000 pictures in steps of 200: the bar moves 16 times, not once at the end.
+        XCTAssertEqual(steps.first?.banksDone, 0)
+        XCTAssertEqual(steps.last?.banksTotal, 16)
+        XCTAssertEqual(steps.last?.banksDone, 16)
+        XCTAssertEqual(steps.map(\.banksDone), Array(0...16))
+    }
+
+    func testBanksAreReadInNumberOrder() throws {
+        let store = try DictionaryStore(path: ":memory:")
+        var files: [String: String] = [:]
+        for i in 1...12 { files["term_bank_\(i).json"] = #"[["語\#(i)","ご","n","",0,["word \#(i)"],\#(i),""]]"# }
+        _ = try YomitanImporter.importDictionary(at: try makeZip(title: "Order", files: files), into: store)
+        // Entries get their ids in import order: bank 2 before bank 10.
+        let ids = try (1...12).map { try XCTUnwrap(store.entries(matching: "語\($0)").first?.rowID) }
+        XCTAssertEqual(ids, ids.sorted())
+    }
+
+    func testCancelledImportLeavesNothingBehind() throws {
+        let store = try DictionaryStore(path: ":memory:")
+        var files = jmdict
+        files["term_bank_2.json"] = #"[["犬","いぬ","n","",0,["dog"],3,""]]"#
+        var asked = 0
+        XCTAssertThrowsError(try YomitanImporter.importDictionary(at: try makeZip(title: "Stop", files: files), into: store,
+                                                                  isCancelled: { asked += 1; return asked > 1 })) {
+            XCTAssertEqual($0 as? YomitanImportError, .cancelled)
+        }
+        XCTAssertTrue(try store.dictionaries().isEmpty)
+        XCTAssertTrue(store.entries(matching: "猫").isEmpty)
+        XCTAssertTrue(store.reverseSearch("cat").isEmpty)
+        // The same file can be imported again afterwards.
+        XCTAssertEqual(try YomitanImporter.importDictionary(at: try makeZip(title: "Stop", files: files), into: store).termCount, 3)
+    }
+
+    /// The 2,000 candidates used to be taken from every dictionary and the
+    /// switched-off ones removed afterwards: a big one switched off could take
+    /// all 2,000 places, and the search came back empty.
+    func testReverseSearchIsNotCrowdedOutBySwitchedOffDictionaries() throws {
+        let store = try DictionaryStore(path: ":memory:")
+        let rows = (0..<2500).map { #"["語\#($0)","ご","n","",0,["cat"],\#($0),""]"# }.joined(separator: ",")
+        let big = try YomitanImporter.importDictionary(at: try makeZip(title: "Big", files: ["term_bank_1.json": "[\(rows)]"]), into: store)
+        let small = ["term_bank_1.json": #"[["猫","ねこ","n","",0,["cat (the animal that purrs and sleeps all day long)"],1,""]]"#]
+        _ = try YomitanImporter.importDictionary(at: try makeZip(title: "Small", files: small), into: store)
+
+        try store.setEnabled(false, dictionary: big.id)
+        XCTAssertEqual(store.reverseSearch("cat").map(\.entry.expression), ["猫"])
+
+        try store.setEnabled(true, dictionary: big.id)
+        XCTAssertEqual(store.reverseSearch("cat", limit: 5).count, 5)
+    }
 }
 #endif

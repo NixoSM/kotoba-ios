@@ -80,6 +80,39 @@ final class GlossaryHTMLTests: XCTestCase {
         XCTAssertTrue(html.contains("kotoba://search?q="), html)
     }
 
+    /// Names from a dictionary file go into the page as attribute and CSS
+    /// property names: one with a space or "=" in it would add an attribute
+    /// of its own, such as a script to run on tap.
+    func testNamesFromTheDictionaryCannotAddAttributes() {
+        let json = #"[{"type":"structured-content","content":{"tag":"span","data":{"x onclick=alert(1) y":"1","class":"ok","fooBar":"2"},"style":{"color;background:url(https://example.com/a)":"red","fontSize":"2em","background":"URL( 'https://example.com/b' )","color":"u\\72l(https://example.com/c)"},"content":"hi"}}]"#
+        let html = GlossaryHTML.items(fromJSON: Data(json.utf8)).first ?? ""
+        XCTAssertEqual(html, #"<span data-sc-class="ok" data-sc-foo-bar="2" style="font-size:2em">hi</span>"#)
+    }
+
+    func testStylesheetCannotLeaveItsStyleElementOrCallOut() {
+        let scope = "[data-d=\"1\"]"
+        // Closing the <style> element to start a script.
+        let breakout = GlossaryHTML.scopedCSS(".a { color: red } </style><script>alert(1)</script><style> .b { color: blue }", scope: scope)
+        XCTAssertFalse(breakout.contains("<"), breakout)
+        XCTAssertTrue(breakout.contains("[data-d=\"1\"] .a{ color: red }"), breakout)
+        // Fetching from the network, spelled four ways; the harmless rules stay.
+        let remote = """
+        @import url(https://example.com/x.css);
+        .keep { color: red }
+        .a { background: url(https://example.com/a.png) }
+        .b { background: URL( "https://example.com/b.png" ) }
+        .c { background: u\\72l(https://example.com/c.png) }
+        .d { background: -webkit-image-set("https://example.com/d.png" 1x) }
+        .icon { background: url("data:image/png;base64,AAAA") }
+        .quote::before { content: "\\201C" }
+        """
+        let css = GlossaryHTML.scopedCSS(remote, scope: scope)
+        XCTAssertFalse(css.contains("example.com"), css)
+        XCTAssertTrue(css.contains("[data-d=\"1\"] .keep{ color: red }"), css)
+        XCTAssertTrue(css.contains("data:image/png;base64,AAAA"), css)
+        XCTAssertTrue(css.contains(#"content: "\201C""#), css)
+    }
+
     func testScopedCSS() {
         let css = "/* c */ .a, span[data-sc-x] { color: red } @media (max-width: 10px) { .b { margin: 0 } }"
         XCTAssertEqual(GlossaryHTML.scopedCSS(css, scope: "[data-d=\"1\"]"),

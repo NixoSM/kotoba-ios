@@ -404,9 +404,22 @@ public final class DictionaryStore: TermSource, @unchecked Sendable {
         guard let match = ReverseSearch.ftsQuery(for: text) else { return [] }
         let query = ReverseSearch.Query(text)
         // 1. Score the matching definitions using the index text alone.
+        //    The 2,000 best candidates must come from dictionaries that are
+        //    switched on: taken from all of them, a large dictionary that is
+        //    switched off could fill the whole list and leave nothing to show.
         let scored: [(id: Int64, score: Int)] = locked {
             var out: [(id: Int64, score: Int)] = []
-            try? cached("SELECT rowid, text FROM gloss_fts WHERE gloss_fts MATCH ?1 ORDER BY bm25(gloss_fts) LIMIT 2000")
+            var someDisabled = false
+            try? cached("SELECT 1 FROM dictionaries WHERE enabled = 0 LIMIT 1").rows { _ in someDisabled = true }
+            let sql = someDisabled
+                ? """
+                  SELECT gloss_fts.rowid, gloss_fts.text
+                  FROM gloss_fts JOIN terms t ON t.id = gloss_fts.rowid JOIN dictionaries d ON d.id = t.dict_id
+                  WHERE gloss_fts MATCH ?1 AND d.enabled = 1
+                  ORDER BY bm25(gloss_fts) LIMIT 2000
+                  """
+                : "SELECT rowid, text FROM gloss_fts WHERE gloss_fts MATCH ?1 ORDER BY bm25(gloss_fts) LIMIT 2000"
+            try? cached(sql)
                 .bind(match).rows { r in
                     let score = ReverseSearch.score(query, indexText: r.string(1))
                     if score > 0 { out.append((r.int64(0), score)) }
