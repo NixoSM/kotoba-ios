@@ -1,4 +1,4 @@
-#if canImport(SQLite3)
+#if canImport(SQLite3) || canImport(CSQLite3)
 import Foundation
 
 /// A dictionary installed in the app.

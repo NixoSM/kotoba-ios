@@ -1,6 +1,10 @@
-#if canImport(SQLite3)
+#if canImport(SQLite3) || canImport(CSQLite3)
 import Foundation
+#if canImport(SQLite3)
 import SQLite3
+#else
+import CSQLite3
+#endif
 
 public struct SQLiteError: Error, CustomStringConvertible {
     public let code: Int32

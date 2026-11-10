@@ -1,12 +1,53 @@
 name: Build
 
+# A Mac minute counts ten times against the allowance of a private repository,
+# so the Mac is used only for what needs one: building the app, and the camera
+# tests when camera code changed. Everything else runs on Linux.
+
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      full:
+        description: "Also run the camera (OCR) tests on a Mac"
+        type: boolean
+        default: false
+
+# A newer commit on the same branch replaces the run still in progress.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
+  # Decides which of the expensive jobs this change needs.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.plan.outputs.app }}
+      ocr: ${{ steps.plan.outputs.ocr }}
+      tree: ${{ steps.plan.outputs.tree }}
+      built_run: ${{ steps.plan.outputs.built_run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check the planning script itself
+        run: python3 tools/ci_plan.py --self-test
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          FULL: ${{ inputs.full }}
+        shell: bash
+        run: python3 tools/ci_plan.py
+
   # Fails if any text would still show in Italian in the English or Japanese app.
   translations:
     runs-on: ubuntu-latest
@@ -15,14 +56,37 @@ jobs:
       - name: Check English and Japanese translations
         run: python3 tools/check_translations.py
 
-  test-core:
+  # The dictionary engine has no screens in it, so Linux can test it.
+  engine:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    container: swift:6.2-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SQLite
+        run: apt-get update -q && apt-get install -y -q libsqlite3-dev
+      - name: Test the dictionary engine
+        shell: bash
+        run: swift test --package-path Packages/KotobaCore 2>&1 | tee test.log
+      - name: Speed benchmark
+        if: always()
+        shell: bash
+        run: grep -E "^(BENCH|  )" test.log || true
+
+  # Apple's text recognizer exists only on a Mac. Two minutes of Mac time,
+  # so it runs when the camera code changed, or when asked for by hand.
+  camera-tests:
+    needs: changes
+    if: needs.changes.outputs.ocr == 'true' && needs.changes.outputs.built_run == ''
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
-      - name: Test the dictionary engine and the vertical text reader
+          # Pinned: bump on purpose, after a green build with the new one.
+          xcode-version: "26.6"
+      - name: Test the engine and the vertical text reader on a Mac
         env:
           KOTOBA_BENCH_OUT: ${{ runner.temp }}/bench
         shell: bash
@@ -39,13 +103,14 @@ jobs:
           retention-days: 7
 
   build-ipa:
-    needs: [test-core, translations]
+    needs: [changes, translations, engine]
+    if: needs.changes.outputs.app == 'true' && needs.changes.outputs.built_run == ''
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: "26.6"
       - name: Generate Xcode project
         run: |
           brew install xcodegen
@@ -82,6 +147,22 @@ jobs:
           name: Kotoba-ipa
           path: Kotoba.ipa
           retention-days: 30
+      # A marker named after the exact source tree. When the same code reaches
+      # main (a merged pull request), the run there finds it and does not
+      # spend Mac minutes building the same app twice.
+      - name: Remember that this code is built
+        run: echo "${{ needs.changes.outputs.tree }}" > built.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: built-${{ needs.changes.outputs.tree }}
+          path: built.txt
+          retention-days: 30
+      - name: Where the app is
+        run: |
+          {
+            echo "### Kotoba.ipa is ready"
+            echo "Scroll to **Artifacts** at the bottom of this page and download **Kotoba-ipa**."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Kotoba's Textractor extension (Windows DLLs, cross-built with MinGW).
   textractor-extension:
