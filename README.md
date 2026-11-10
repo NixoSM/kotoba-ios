@@ -22,6 +22,7 @@ tocchi una parola e la cerchi. Come prepararlo: [docs/texthooker.md](docs/textho
 - `tools/render_screenshots.js` — fotografa la pagina dei risultati in ogni tema, dall'HTML che l'app produce.
 - `project.yml` — descrizione del progetto Xcode, generato con XcodeGen. La versione dell'app si cambia qui, in un punto solo.
 - `.github/workflows/build.yml` — a ogni pull request e a ogni modifica su `main`, GitHub esegue i controlli su Linux e, solo se passano e solo se serve, compila `Kotoba.ipa` (non firmata) su un Mac.
+  Una pull request in **bozza** (draft) non usa mai il Mac: per compilare l'app premi **Ready for review** nella pagina della pull request, oppure **Run workflow** nella scheda Actions.
 
 ## Installare l'app sul tuo iPhone (Windows + Apple ID gratuito)
 

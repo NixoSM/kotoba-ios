@@ -8,6 +8,8 @@ Called by the `changes` job of .github/workflows/build.yml. It answers:
   tree       the exact source tree, as git names it
   built_run  on main: the earlier run that already built this same tree
              (a merged pull request), so the app is not built twice
+  mac        may this run use a Mac at all? Not while the pull request is a
+             draft: the Mac waits for "Ready for review", or a run by hand
 
 Run the self-test with:  python3 tools/ci_plan.py --self-test
 """
@@ -42,6 +44,15 @@ def plan(files, full=False):
         "ocr": full or any(OCR.search(f) for f in files),
         "pages": any(PAGES.search(f) for f in files),
     }
+
+
+def mac_allowed(event, draft):
+    """A draft pull request is work still in progress: Linux checks only.
+
+    Marking it "Ready for review" starts a new run, and that one builds.
+    A push to main and a run started by hand always may.
+    """
+    return not (event == "pull_request" and draft)
 
 
 def git(*args):
@@ -88,6 +99,7 @@ def find_built_run(tree):
 def main():
     event = os.environ.get("EVENT", "")
     full = os.environ.get("FULL", "") == "true"
+    mac = mac_allowed(event, os.environ.get("DRAFT", "") == "true")
     files = changed_files(event, os.environ.get("BEFORE", ""))
     result = plan(files, full)
     tree = git("rev-parse", "HEAD^{tree}").stdout.strip()
@@ -106,6 +118,11 @@ def main():
             f"This exact code was already built: **download Kotoba-ipa from "
             f"[that run](https://github.com/{repo}/actions/runs/{built_run})**. No second Mac build."
         )
+    elif not mac:
+        lines.append(
+            "This pull request is a draft: **no Mac build yet**, only the checks on Linux. "
+            "To build Kotoba.ipa, open the pull request and press **Ready for review**."
+        )
     else:
         lines.append("The app is built on a Mac." + (" The camera tests run too." if result["ocr"] else ""))
     print("\n".join(lines))
@@ -116,6 +133,7 @@ def main():
         "pages": "true" if result["pages"] else "false",
         "tree": tree,
         "built_run": built_run,
+        "mac": "true" if mac else "false",
     }
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a") as out:
@@ -148,6 +166,13 @@ def self_test():
     check(None, True, False, True)
     check(None, True, True, True, full=True)
     check([], False, False, False)
+
+    # Only a draft pull request keeps the Mac waiting.
+    assert not mac_allowed("pull_request", True)
+    assert mac_allowed("pull_request", False)
+    assert mac_allowed("push", False)
+    assert mac_allowed("workflow_dispatch", False)
+    assert mac_allowed("workflow_dispatch", True)
     print("ci_plan self-test OK")
 
 

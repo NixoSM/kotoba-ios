@@ -3,11 +3,16 @@ name: Build
 # A Mac minute counts ten times against the allowance of a private repository,
 # so the Mac is used only for what needs one: building the app, and the camera
 # tests when camera code changed. Everything else runs on Linux.
+#
+# A draft pull request never uses the Mac. Pressing "Ready for review" on it
+# starts a new run that does (that is what "ready_for_review" below is for),
+# and so does "Run workflow" in the Actions tab.
 
 on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       full:
@@ -34,6 +39,7 @@ jobs:
       pages: ${{ steps.plan.outputs.pages }}
       tree: ${{ steps.plan.outputs.tree }}
       built_run: ${{ steps.plan.outputs.built_run }}
+      mac: ${{ steps.plan.outputs.mac }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,6 +51,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
+          DRAFT: ${{ github.event.pull_request.draft }}
           FULL: ${{ inputs.full }}
         shell: bash
         run: python3 tools/ci_plan.py
@@ -123,7 +130,7 @@ jobs:
   # so it runs when the camera code changed, or when asked for by hand.
   camera-tests:
     needs: changes
-    if: needs.changes.outputs.ocr == 'true' && needs.changes.outputs.built_run == ''
+    if: needs.changes.outputs.ocr == 'true' && needs.changes.outputs.built_run == '' && needs.changes.outputs.mac == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -149,7 +156,7 @@ jobs:
 
   build-ipa:
     needs: [changes, translations, engine]
-    if: needs.changes.outputs.app == 'true' && needs.changes.outputs.built_run == ''
+    if: needs.changes.outputs.app == 'true' && needs.changes.outputs.built_run == '' && needs.changes.outputs.mac == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
