@@ -33,6 +33,32 @@ public enum VerticalOCR {
         return recognize(tile, column: column, image: image)
     }
 
+    /// The columns next to `result`: `before` is the one to its right (read
+    /// first), `after` the one to its left. For a sentence that runs from one
+    /// column into the next. Either is nil when there is no column there.
+    public static func neighbours(_ image: GrayImage, of result: Result) -> (before: Result?, after: Result?) {
+        let W = Double(image.width), H = Double(image.height)
+        let f = result.frame
+        guard !f.isNull, f.width > 0, result.em > 0 else { return (nil, nil) }
+        let cx = Double(f.midX) * W, half = Double(f.width) * W / 2
+        let top = (1 - Double(f.maxY)) * H
+        let em = result.em
+        // Columns sit about 1.3 to 2 characters apart: try a few distances,
+        // near the top of this column, where the next one starts.
+        func probe(_ direction: Double) -> Result? {
+            for k in [1.3, 1.6, 2.0, 2.5] {
+                let x = cx + direction * k * em, y = min(H - 1, top + em * 0.6)
+                guard x >= 0, x < W else { return nil }
+                guard let found = read(image, at: CGPoint(x: x, y: y)) else { continue }
+                let fx = Double(found.frame.midX) * W
+                // Another column, on that side, and the next one (not one further on).
+                if direction * (fx - cx) > half, abs(fx - cx) <= 3 * em { return found }
+            }
+            return nil
+        }
+        return (probe(1), probe(-1))
+    }
+
     // MARK: Layout
 
     struct Column {

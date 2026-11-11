@@ -86,6 +86,35 @@ public struct OCRLine: Sendable, Equatable {
         boxes.filter { $0 != .zero }.reduce(CGRect.null) { $0.union($1) }
     }
 
+    /// The lines read just before and just after `lines[index]`, for a sentence
+    /// that runs on: the column to the right and to the left (縦書き), or the
+    /// line above and below. Frames are normalized with the origin bottom-left
+    /// (Vision's); a line further than 2.5 line widths away does not count.
+    public static func adjacent(to index: Int, in lines: [OCRLine]) -> (before: OCRLine?, after: OCRLine?) {
+        guard lines.indices.contains(index) else { return (nil, nil) }
+        let line = lines[index], frame = line.frame, isVertical = line.vertical
+        guard !frame.isNull else { return (nil, nil) }
+        func overlaps(_ other: OCRLine) -> Bool {
+            let f = other.frame
+            guard !f.isNull else { return false }
+            return isVertical ? f.minY < frame.maxY && f.maxY > frame.minY : f.minX < frame.maxX && f.maxX > frame.minX
+        }
+        let gap = isVertical ? frame.width * 2.5 : frame.height * 2.5
+        func distance(_ i: Int) -> CGFloat {
+            let f = lines[i].frame
+            return isVertical ? abs(f.midX - frame.midX) : abs(f.midY - frame.midY)
+        }
+        // Reading order: columns right to left, lines top to bottom (y grows upwards).
+        func isBefore(_ i: Int) -> Bool {
+            let f = lines[i].frame
+            return isVertical ? f.midX > frame.midX : f.midY > frame.midY
+        }
+        let others = lines.indices.filter { $0 != index && overlaps(lines[$0]) && distance($0) <= gap }
+        let before = others.filter { isBefore($0) }.min { distance($0) < distance($1) }
+        let after = others.filter { !isBefore($0) }.min { distance($0) < distance($1) }
+        return (before.map { lines[$0] }, after.map { lines[$0] })
+    }
+
     /// The same line with every box moved by `transform` (for example from a crop to the whole frame).
     public func mapped(_ transform: (CGRect) -> CGRect) -> OCRLine {
         OCRLine(text: text, boxes: boxes.map { $0 == .zero ? .zero : transform($0) }, vertical: vertical)

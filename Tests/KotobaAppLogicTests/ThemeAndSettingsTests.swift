@@ -135,11 +135,12 @@ final class AppSettingsTests: XCTestCase {
         settings.remember("  食べる ")
         settings.remember("猫")
         settings.remember("食べる")
+        settings.remember("猿轡 (さるぐつわ) gag, reading higurashi!")
         settings.mined.insert("猫|ねこ")
         settings.appearance.theme = "matcha"
         settings.save()
         let loaded = AppSettings.load()
-        XCTAssertEqual(loaded.history, ["食べる", "猫"], "newest first, each once, trimmed")
+        XCTAssertEqual(loaded.history, ["食べる", "猫"], "newest first, each once, trimmed, no long pasted text")
         XCTAssertEqual(loaded, settings)
     }
 

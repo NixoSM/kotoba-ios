@@ -141,6 +141,26 @@ final class VerticalBenchTests: XCTestCase {
         }
     }
 
+    /// A sentence that runs from one column into the next: the reader finds
+    /// the columns on both sides, so the Anki sentence can be whole.
+    func testNeighbouringColumns() throws {
+        for style in [Self.styles[0], Self.styles[1]] {
+            let page = PageRenderer.render(Self.columns, ruby: Self.ruby, style: style)
+            // Column 1 ("窓際の席で…僕に") ends mid-sentence, which goes on in column 2.
+            let middle = try XCTUnwrap(VerticalOCR.read(page.image, at: page.columns[1][4].center), style.name)
+            let next = VerticalOCR.neighbours(page.image, of: middle)
+            let before = try XCTUnwrap(next.before, "\(style.name): the column to the right")
+            let after = try XCTUnwrap(next.after, "\(style.name): the column to the left")
+            say("BENCH neighbours \(style.name): \(String(before.line.text)) | \(String(middle.line.text)) | \(String(after.line.text))")
+            XCTAssertGreaterThan(Double(before.frame.midX), Double(middle.frame.maxX), style.name)
+            XCTAssertLessThan(Double(after.frame.midX), Double(middle.frame.minX), style.name)
+            // The next column on the left is column 2, which starts with 気づく (read exactly on the clean page).
+            if style.name == "clean" {
+                XCTAssertTrue(String(after.line.text).hasPrefix("気"), String(after.line.text))
+            }
+        }
+    }
+
     /// The back cover of a light novel, photographed in the lens (from the user's screenshot).
     func testRealPhoto() throws {
         guard let url = Bundle.module.url(forResource: "back-cover", withExtension: "png", subdirectory: "Fixtures"),

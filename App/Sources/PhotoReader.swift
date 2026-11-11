@@ -308,30 +308,8 @@ struct PhotoReader: UIViewRepresentable {
         /// The sentence around the word, continued into the neighbouring columns (or lines).
         private func sentence(for pick: WordAim.Pick, vertical isVertical: Bool, line index: Int) -> String {
             let lines = isVertical ? columns : rows
-            let line = lines[index], frame = line.frame
-            // Reading order: columns right to left, lines top to bottom (Vision's y grows upwards).
-            func overlaps(_ other: OCRLine) -> Bool {
-                let f = other.frame
-                return isVertical ? f.minY < frame.maxY && f.maxY > frame.minY : f.minX < frame.maxX && f.maxX > frame.minX
-            }
-            let gap = isVertical ? frame.width * 2.5 : frame.height * 2.5
-            func distance(_ i: Int) -> CGFloat {
-                let f = lines[i].frame
-                return isVertical ? abs(f.midX - frame.midX) : abs(f.midY - frame.midY)
-            }
-            func isBefore(_ i: Int) -> Bool {
-                let f = lines[i].frame
-                return isVertical ? f.midX > frame.midX : f.midY > frame.midY
-            }
-            let others = lines.indices.filter { $0 != index && overlaps(lines[$0]) }
-            let before = others.filter { isBefore($0) }.min { distance($0) < distance($1) }
-            let after = others.filter { !isBefore($0) }.min { distance($0) < distance($1) }
-            func near(_ i: Int?) -> OCRLine? {
-                guard let i, distance(i) <= gap else { return nil }
-                return lines[i]
-            }
-            let head = near(before)?.text ?? [], tail = near(after)?.text ?? []
-            return WordAim.sentence(in: head + line.text + tail, around: head.count + pick.start)
+            let next = OCRLine.adjacent(to: index, in: lines)
+            return WordAim.sentence(of: pick, before: next.before?.text, after: next.after?.text)
         }
 
         /// The column under the tap, read with the vertical reader.
