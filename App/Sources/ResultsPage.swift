@@ -360,6 +360,9 @@ enum ResultsPage {
     /// Run on load and after every in-place swap of the results.
     private static let foldScript = """
     window.kotobaFold = function(){
+      // Not laid out yet (a page loaded before the view had its size): every
+      // line would look endless. Measure on the next resize instead.
+      if (document.documentElement.clientWidth < 120) return;
       document.querySelectorAll('#kotoba-results .dict:not(.closed)').forEach(function(d){
         const body = d.querySelector(':scope > .gloss');
         if (!body || d.dataset.folded) return;
@@ -386,6 +389,7 @@ enum ResultsPage {
       });
     };
     kotobaFold();
+    window.addEventListener('resize', kotobaFold);
     """
 
     private static let lookupScript = """
