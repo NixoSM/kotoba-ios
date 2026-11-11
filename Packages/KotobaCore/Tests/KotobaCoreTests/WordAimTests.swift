@@ -105,4 +105,24 @@ final class WordAimTests: XCTestCase {
         XCTAssertNil(s.feed(she, at: 2.5))
         XCTAssertEqual(s.feed(she, at: 2.7)?.word, "彼女")
     }
+
+    /// 「十七歳の宝は、転校先で二つの人格・」 stopped at the column's end: the
+    /// sentence goes on in the next column, and only the part up to 。 is taken.
+    func testSentenceContinuesIntoNextColumn() {
+        let column = Array("十七歳の宝は、転校先で二つの人格")
+        let pick = WordAim.Pick(text: column, start: 7, length: 2) // 転校
+        XCTAssertEqual(WordAim.sentenceEdges(of: pick).start, true)
+        XCTAssertEqual(WordAim.sentenceEdges(of: pick).end, true)
+        let sentence = WordAim.sentence(of: pick, before: Array("前の文。そして"), after: Array("を持つ少女だった。次の文"))
+        XCTAssertEqual(sentence, "そして十七歳の宝は、転校先で二つの人格を持つ少女だった。")
+    }
+
+    /// A sentence that ends inside its own column does not borrow from the next.
+    func testSentenceInsideOneColumnStaysThere() {
+        let column = Array("雨が降った。彼女は笑った。")
+        let pick = WordAim.Pick(text: column, start: 6, length: 2) // 彼女
+        XCTAssertEqual(WordAim.sentenceEdges(of: pick).start, false)
+        XCTAssertEqual(WordAim.sentenceEdges(of: pick).end, false)
+        XCTAssertEqual(WordAim.sentence(of: pick, before: Array("前。"), after: Array("後。")), "彼女は笑った。")
+    }
 }

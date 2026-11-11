@@ -102,9 +102,13 @@ struct AppSettings: Codable, Equatable {
         minedDates = [:]
     }
 
+    static let longestRemembered = 20
+
     mutating func remember(_ query: String) {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return }
+        // A pasted sentence is a reading, not a search to come back to: as a
+        // "Recent" chip it would fill a whole row.
+        guard !q.isEmpty, q.count <= Self.longestRemembered else { return }
         history.removeAll { $0 == q }
         history.insert(q, at: 0)
         if history.count > 40 { history.removeLast(history.count - 40) }

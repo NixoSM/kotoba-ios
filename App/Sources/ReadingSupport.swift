@@ -106,7 +106,7 @@ struct ContextStrip: View {
                             .id(index)
                     }
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 24) // clear of the faded edges at either end
             }
             .onAppear { proxy.scrollTo(pick.start, anchor: .center) }
             .onChange(of: pick) { _, new in
@@ -114,6 +114,14 @@ struct ContextStrip: View {
             }
         }
         .frame(height: 46)
+        // Faded edges: a character cut by the edge reads as "the line goes on, swipe".
+        .mask {
+            HStack(spacing: 0) {
+                LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: 28)
+                Rectangle()
+                LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 28)
+            }
+        }
         .background(Palette.raised)
     }
 }

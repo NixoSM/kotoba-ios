@@ -62,6 +62,10 @@ struct LensView: View {
                                        sentence = picked.sentence
                                        locks += 1
                                    },
+                                   onSentence: { picked, whole in
+                                       // Still the word on screen: its sentence, read across lines or columns.
+                                       if pick == picked { sentence = whole }
+                                   },
                                    onTap: { point in freeze(tapAt: point) },
                                    onShutter: { freeze(tapAt: nil) },
                                    onZoom: { zoom = $0 })
@@ -124,6 +128,13 @@ struct LensView: View {
                 result.sentence = sentence.isEmpty ? pick.sentence : sentence
                 outcome = result
             }
+            .onChange(of: sentence) { _, whole in
+                // The sentence read across columns can arrive after the definition:
+                // Anki gets it as long as these results are still the word's.
+                guard !whole.isEmpty, let pick,
+                      outcome.searchedText == pick.query.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+                outcome.sentence = whole
+            }
         }
     }
 
@@ -181,14 +192,23 @@ struct LensView: View {
                         .foregroundStyle(Palette.muted)
                         .multilineTextAlignment(.center)
                         .padding(24)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(maxWidth: .infinity, maxHeight: showsResults ? .infinity : nil)
+                        .fixedSize(horizontal: false, vertical: !showsResults)
                 } else {
                     ResultsPane(outcome: outcome, query: pick?.query ?? "", onLookup: onLookup, onSearch: onSearch)
                 }
             }
         }
-        .frame(height: 320)
+        // Only the hint to show: the panel is as tall as the hint (larger
+        // text sizes included) and the camera gets the rest. Room for the
+        // definition once a word is found.
+        .frame(height: showsResults ? 320 : nil)
         .background(Palette.paper)
+        .animation(.easeOut(duration: 0.25), value: showsResults)
+    }
+
+    private var showsResults: Bool {
+        pick != nil || !outcome.direct.isEmpty || !outcome.byMeaning.isEmpty
     }
 
     private var hint: String {
@@ -202,7 +222,8 @@ struct LensView: View {
     private func select(_ index: Int) {
         guard let current = pick, let moved = WordFinder.shared.pick(in: current.text, start: index) else { return }
         pick = moved
-        sentence = moved.sentence
+        // Same line: keep the sentence already read across lines when it still holds the word's.
+        if !sentence.contains(moved.sentence) { sentence = moved.sentence }
         if frozen == nil { freeze(tapAt: nil) }
     }
 
@@ -285,6 +306,7 @@ private struct LiveReader: UIViewRepresentable {
     let controller: LensController
     var vertical: Bool
     let onPick: (WordAim.Pick) -> Void
+    let onSentence: (WordAim.Pick, String) -> Void
     let onTap: (CGPoint) -> Void
     let onShutter: () -> Void
     let onZoom: (CGFloat) -> Void
@@ -299,6 +321,7 @@ private struct LiveReader: UIViewRepresentable {
 
     func updateUIView(_ view: LiveReaderView, context: Context) {
         view.onPick = onPick
+        view.onSentence = onSentence
         view.onTap = onTap
         view.onShutter = onShutter
         view.onZoom = onZoom
@@ -316,6 +339,9 @@ final class LiveReaderView: UIView, AVCaptureVideoDataOutputSampleBufferDelegate
     private var preview: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
 
     var onPick: ((WordAim.Pick) -> Void)?
+    /// A word's sentence joined with the line or column next to it, when it
+    /// runs on there (a pick alone only has its own line).
+    var onSentence: ((WordAim.Pick, String) -> Void)?
     var onTap: ((CGPoint) -> Void)?
     var onShutter: (() -> Void)?
     var onZoom: ((CGFloat) -> Void)?
@@ -363,6 +389,11 @@ final class LiveReaderView: UIView, AVCaptureVideoDataOutputSampleBufferDelegate
     nonisolated(unsafe) private var verticalMode = false
     nonisolated(unsafe) private var readingOn = true
     nonisolated(unsafe) private var favored: String?
+    /// The word picked in the last frame read, and what is needed for the
+    /// rest of its sentence: the lines next to it (horizontal text, read with
+    /// the frame) or the column and picture to read the next columns from.
+    nonisolated(unsafe) private var lastRead: (pick: WordAim.Pick, column: (gray: GrayImage, result: VerticalOCR.Result)?,
+                                               before: [Character]?, after: [Character]?)?
     /// The part of the frame on screen (normalized, origin top-left).
     nonisolated(unsafe) private var visible = CGRect(x: 0, y: 0, width: 1, height: 1)
     /// Horizontal text is read in this band around the dot (Vision's coordinates).
@@ -427,7 +458,10 @@ final class LiveReaderView: UIView, AVCaptureVideoDataOutputSampleBufferDelegate
         stabilizer.reset()
         lines = []
         markedFrame = nil
-        queue.async { [weak self] in self?.favored = nil }
+        queue.async { [weak self] in
+            self?.favored = nil
+            self?.lastRead = nil
+        }
         redraw()
     }
 
@@ -603,6 +637,8 @@ final class LiveReaderView: UIView, AVCaptureVideoDataOutputSampleBufferDelegate
         var line: OCRLine?
         var shown: [OCRLine] = []
         var position: Double?
+        var column: (gray: GrayImage, result: VerticalOCR.Result)?
+        var around: (before: [Character]?, after: [Character]?) = (nil, nil)
         if verticalMode {
             // Only what is on screen; the dot is the frame's centre.
             let v = visible
@@ -618,6 +654,7 @@ final class LiveReaderView: UIView, AVCaptureVideoDataOutputSampleBufferDelegate
                 line = mapped
                 shown = [mapped]
                 position = result.position
+                column = (gray, result)
             }
         } else {
             shown = HorizontalOCR.lines(in: buffer, region: band, languageCorrection: false)
@@ -630,9 +667,14 @@ final class LiveReaderView: UIView, AVCaptureVideoDataOutputSampleBufferDelegate
             }
             line = best?.line
             position = best?.position
+            if let best, let index = shown.firstIndex(of: best.line) {
+                let next = OCRLine.adjacent(to: index, in: shown)
+                around = (next.before?.text, next.after?.text)
+            }
         }
         var pick: WordAim.Pick?
         if let line, let position { pick = WordFinder.shared.pick(in: line, at: position, favoring: favored) }
+        if let pick { lastRead = (pick, column, around.before, around.after) }
         let size = CGSize(width: W, height: H)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -650,6 +692,7 @@ final class LiveReaderView: UIView, AVCaptureVideoDataOutputSampleBufferDelegate
             let word = changed.word
             queue.async { [weak self] in self?.favored = word }
             onPick?(changed)
+            readSentence(for: changed)
         }
         // Box the word on screen where it is in this frame.
         markedFrame = nil
@@ -662,6 +705,30 @@ final class LiveReaderView: UIView, AVCaptureVideoDataOutputSampleBufferDelegate
             if let best { markedFrame = line.frame(of: best..<(best + word.count)) }
         }
         redraw()
+    }
+
+    /// The word's whole sentence, once per word, when it runs off its line:
+    /// 「…二つの人格・」 goes on in the next column. Vertical text reads the
+    /// columns either side (the frame only read the one under the dot).
+    private func readSentence(for shownPick: WordAim.Pick) {
+        let edges = WordAim.sentenceEdges(of: shownPick)
+        guard edges.start || edges.end else { return }
+        queue.async { [weak self] in
+            // The word as picked in the last frame it was seen in.
+            guard let self, let last = self.lastRead, last.pick.word == shownPick.word else { return }
+            var before = last.before, after = last.after
+            if let column = last.column {
+                let next = VerticalOCR.neighbours(column.gray, of: column.result)
+                before = next.before?.line.text
+                after = next.after?.line.text
+            }
+            guard before != nil || after != nil else { return }
+            let sentence = WordAim.sentence(of: last.pick, before: before, after: after)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.stabilizer.shown == shownPick else { return }
+                self.onSentence?(shownPick, sentence)
+            }
+        }
     }
 
     private func redraw() {

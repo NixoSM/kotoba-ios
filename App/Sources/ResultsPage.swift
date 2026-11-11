@@ -25,7 +25,9 @@ enum ResultsPage {
         }
         var meaning = ""
         if !outcome.byMeaning.isEmpty {
-            meaning += section(tr("Parole che significano «{0}»", query.trimmingCharacters(in: .whitespaces)))
+            // The results' own text: the box may already hold the next query.
+            let searched = outcome.searchedText.isEmpty ? query.trimmingCharacters(in: .whitespaces) : outcome.searchedText
+            meaning += section(tr("Parole che significano «{0}»", searched))
             if let status = o.indexStatus { meaning += "<p class=\"note\">\(GlossaryHTML.escape(status))</p>" }
             for (i, g) in outcome.byMeaning.enumerated() {
                 meaning += entry(g, link: o.canMine ? "kotoba://mine?s=meaning&i=\(i)" : nil, options: o)
@@ -342,7 +344,55 @@ enum ResultsPage {
 
     /// Tap any Japanese character to look up the text starting there,
     /// like hovering with Yomitan. Readings in <rt> are skipped.
-    private static let tapScript = """
+    /// Labels the page's script writes, already in the app's language.
+    private static var scriptLabels: String {
+        let labels = ["more": tr("Mostra tutto"), "less": tr("Mostra meno")]
+        let json = (try? JSONSerialization.data(withJSONObject: labels, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) }
+        return json ?? "{}"
+    }
+
+    /// Tap-to-look-up, plus folding of long definitions.
+    private static var tapScript: String { "var kotobaLabels = \(scriptLabels);\n" + lookupScript + foldScript }
+
+    /// A definition taller than about 14 lines (火 in a big monolingual
+    /// dictionary runs for screens) opens folded to 8, with a button to read
+    /// the rest: the next dictionary and the next word stay a short scroll away.
+    /// Run on load and after every in-place swap of the results.
+    private static let foldScript = """
+    window.kotobaFold = function(){
+      // Not laid out yet (a page loaded before the view had its size): every
+      // line would look endless. Measure on the next resize instead.
+      if (document.documentElement.clientWidth < 120) return;
+      document.querySelectorAll('#kotoba-results .dict:not(.closed)').forEach(function(d){
+        const body = d.querySelector(':scope > .gloss');
+        if (!body || d.dataset.folded) return;
+        d.dataset.folded = '1';
+        const cs = getComputedStyle(body);
+        let line = parseFloat(cs.lineHeight);
+        if (!(line > 0)) line = parseFloat(cs.fontSize) * 1.4;
+        // In the compact layout the definition runs inline after the dictionary's
+        // name: measure the whole item, and fold it as a block.
+        const tall = cs.display === 'inline' ? d.scrollHeight : body.scrollHeight;
+        if (tall <= line * 14) return;
+        body.style.setProperty('--fold', (line * 8) + 'px');
+        body.classList.add('folded');
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'more';
+        b.textContent = kotobaLabels.more;
+        b.addEventListener('click', function(){
+          const open = body.classList.toggle('folded');
+          b.textContent = open ? kotobaLabels.more : kotobaLabels.less;
+          if (open) d.scrollIntoView({block: 'nearest'});
+        });
+        d.appendChild(b);
+      });
+    };
+    kotobaFold();
+    window.addEventListener('resize', kotobaFold);
+    """
+
+    private static let lookupScript = """
     (function(){
       const jp = /^[\\u3040-\\u30ff\\u3400-\\u9fff\\uf900-\\ufaff々〆ヶ]/;
       function charAt(x, y) {
@@ -365,7 +415,7 @@ enum ResultsPage {
         setTimeout(function(){ b.classList.remove('playing'); }, 1600);
       }, true);
       document.addEventListener('click', function(e){
-        if (e.target.closest('a, summary, .mine, rt')) return;
+        if (e.target.closest('a, summary, .mine, rt, .more')) return;
         const hit = charAt(e.clientX, e.clientY);
         if (!hit || hit.node.parentElement.closest('rt')) return;
         let text = hit.node.data.slice(hit.off);
@@ -501,6 +551,11 @@ enum ResultsPage {
 
     ul { padding-left:1.2em; margin:2px 0; }
     details { margin:3px 0; }
+    /* A long definition, folded: the fade says there is more below. */
+    .gloss.folded, html.compact .dict > .gloss.folded { display:block; max-height:var(--fold, 12em); overflow:hidden;
+                    -webkit-mask-image:linear-gradient(#000 60%, transparent); mask-image:linear-gradient(#000 60%, transparent); }
+    button.more { display:block; min-height:44px; padding:0 2px; border:0; background:none; color:var(--shu);
+                  font:600 14px/44px -apple-system; -webkit-tap-highlight-color:transparent; }
     summary { color:var(--shu); font-size:.92em; cursor:pointer; }
     table { border-collapse:collapse; margin:4px 0; }
     td, th { border:1px solid var(--rule); padding:2px 6px; }

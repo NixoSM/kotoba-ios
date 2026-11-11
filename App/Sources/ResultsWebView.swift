@@ -32,7 +32,7 @@ struct ResultsWebView: UIViewRepresentable {
         if let parts = Self.split(html), parts.shell == c.loadedShell,
            let json = try? JSONSerialization.data(withJSONObject: parts.body, options: .fragmentsAllowed),
            let literal = String(data: json, encoding: .utf8) {
-            let script = "(function(h){var m=document.getElementById('kotoba-results');if(!m)return false;m.innerHTML=h;window.scrollTo(0,0);return true;})(\(literal))"
+            let script = "(function(h){var m=document.getElementById('kotoba-results');if(!m)return false;m.innerHTML=h;window.scrollTo(0,0);if(window.kotobaFold)kotobaFold();return true;})(\(literal))"
             view.evaluateJavaScript(script) { [weak view] result, _ in
                 guard (result as? Bool) != true, let view, c.lastHTML == html else { return }
                 c.load(html, in: view)

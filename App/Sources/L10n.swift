@@ -103,6 +103,8 @@ enum L10n {
         "{0} parole · {1} ms": ("{0} words · {1} ms", "{0} 語 · {1} ms"),
         "1 parola · {0} ms": ("1 word · {0} ms", "1 語 · {0} ms"),
         "Ascolta": ("Listen", "再生"),
+        "Mostra tutto": ("Show all", "すべて表示"),
+        "Mostra meno": ("Show less", "折りたたむ"),
         "Già in Anki": ("Already in Anki", "Anki に追加済み"),
         "Aggiungi ad Anki": ("Add to Anki", "Anki に追加"),
         "Frequenza": ("Frequency", "頻度"),

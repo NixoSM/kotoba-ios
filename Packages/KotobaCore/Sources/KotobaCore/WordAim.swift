@@ -76,6 +76,27 @@ public enum WordAim {
         return String(text[a..<b]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Whether the word's sentence runs off the start or the end of its line:
+    /// then the rest of it is in the neighbouring column (or line).
+    public static func sentenceEdges(of pick: Pick) -> (start: Bool, end: Bool) {
+        let text = pick.text
+        guard !text.isEmpty else { return (false, false) }
+        let i = min(max(pick.start, 0), text.count - 1)
+        let enders: Set<Character> = ["。", "！", "？", "!", "?", "．"]
+        let start = !text[..<i].contains(where: enders.contains)
+        let end = !text[i...].contains(where: enders.contains)
+        return (start, end)
+    }
+
+    /// The sentence around the word, continued into the line before and the
+    /// line after (columns to the right and to the left, for vertical text).
+    public static func sentence(of pick: Pick, before: [Character]?, after: [Character]?) -> String {
+        let edges = sentenceEdges(of: pick)
+        let head = edges.start ? (before ?? []) : []
+        let tail = edges.end ? (after ?? []) : []
+        return sentence(in: head + pick.text + tail, around: head.count + pick.start)
+    }
+
     static func isHiragana(_ c: Character) -> Bool {
         guard let v = c.unicodeScalars.first?.value else { return false }
         return (0x3041...0x3096).contains(v)
