@@ -9,6 +9,9 @@ struct SearchResults {
     var byMeaning: [HeadwordGroup] = []
     /// The text the words were found in, used as the Anki sentence.
     var sentence = ""
+    /// What this search was run for. The search box changes before the
+    /// results do, so headings take the text from here, not from the box.
+    var searchedText = ""
     /// Latin input is usually a meaning ("run"), so the romaji reading
     /// (るん) only goes first when it is a common word.
     var romajiFirst = true
@@ -61,7 +64,7 @@ enum SearchEngine {
         let text = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return SearchResults() }
         let started = Date()
-        var outcome = SearchResults(sentence: text)
+        var outcome = SearchResults(sentence: text, searchedText: text)
         var typedKana: [String] = []
 
         func ranked(_ inputs: [(entry: TermEntry, matchedText: String, reasons: [Reason])]) -> [HeadwordGroup] {

@@ -181,14 +181,23 @@ struct LensView: View {
                         .foregroundStyle(Palette.muted)
                         .multilineTextAlignment(.center)
                         .padding(24)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(maxWidth: .infinity, maxHeight: showsResults ? .infinity : nil)
+                        .fixedSize(horizontal: false, vertical: !showsResults)
                 } else {
                     ResultsPane(outcome: outcome, query: pick?.query ?? "", onLookup: onLookup, onSearch: onSearch)
                 }
             }
         }
-        .frame(height: 320)
+        // Only the hint to show: the panel is as tall as the hint (larger
+        // text sizes included) and the camera gets the rest. Room for the
+        // definition once a word is found.
+        .frame(height: showsResults ? 320 : nil)
         .background(Palette.paper)
+        .animation(.easeOut(duration: 0.25), value: showsResults)
+    }
+
+    private var showsResults: Bool {
+        pick != nil || !outcome.direct.isEmpty || !outcome.byMeaning.isEmpty
     }
 
     private var hint: String {

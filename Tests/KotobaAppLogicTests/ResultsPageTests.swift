@@ -152,4 +152,15 @@ final class ResultsPageTests: XCTestCase {
         let html = ResultsPage.html(outcome: outcome, query: "食", options: ResultsPage.Options())
         XCTAssertTrue(html.contains("<span class=\"tag\">Aozora &lt;b&gt; 412㋕</span>"), html)
     }
+
+    /// The box changes on every keystroke, the results a moment later: the
+    /// heading must name what the results were found for, not the newer text.
+    func testMeaningHeadingNamesWhatWasSearched() throws {
+        let store = try Fixtures.store()
+        let outcome = Fixtures.search("cat", in: store)
+        XCTAssertFalse(outcome.byMeaning.isEmpty)
+        let html = ResultsPage.html(outcome: outcome, query: "catt", options: ResultsPage.Options())
+        XCTAssertTrue(html.contains("Parole che significano «cat»"), html)
+        XCTAssertFalse(html.contains("«catt»"))
+    }
 }

@@ -25,7 +25,9 @@ enum ResultsPage {
         }
         var meaning = ""
         if !outcome.byMeaning.isEmpty {
-            meaning += section(tr("Parole che significano «{0}»", query.trimmingCharacters(in: .whitespaces)))
+            // The results' own text: the box may already hold the next query.
+            let searched = outcome.searchedText.isEmpty ? query.trimmingCharacters(in: .whitespaces) : outcome.searchedText
+            meaning += section(tr("Parole che significano «{0}»", searched))
             if let status = o.indexStatus { meaning += "<p class=\"note\">\(GlossaryHTML.escape(status))</p>" }
             for (i, g) in outcome.byMeaning.enumerated() {
                 meaning += entry(g, link: o.canMine ? "kotoba://mine?s=meaning&i=\(i)" : nil, options: o)
