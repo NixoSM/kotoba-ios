@@ -50,6 +50,16 @@ final class ScannerAndFormatTests: XCTestCase {
         XCTAssertEqual(scanner.scan("食べ物", in: source).first?.entry.expression, "食べ物")
     }
 
+    /// The bug from the texthooker: 言わねえ found only 言 (げん).
+    func testScannerReadsSpokenNegative() throws {
+        let source = MemoryTermSource(try YomitanParser.termBank(from: """
+        [["言", "げん", "n", "", 0, ["word"], 1, ""], ["言う", "いう", "v5", "v5", 0, ["to say"], 2, ""]]
+        """.data(using: .utf8)!))
+        let hits = TextScanner().scan("言わねえ口だもんなあ", in: source)
+        XCTAssertEqual(hits.first?.entry.expression, "言う")
+        XCTAssertEqual(hits.first?.matchedText, "言わねえ")
+    }
+
     func testScannerRejectsWrongPartOfSpeech() throws {
         // 猫 is a noun, so "猫た" must not be read as a past tense of it.
         let source = MemoryTermSource(try YomitanParser.termBank(from: bank))

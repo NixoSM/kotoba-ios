@@ -103,6 +103,39 @@ final class DeinflectorTests: XCTestCase {
         XCTAssertFalse(d.deinflect("ねこ").contains { $0.term == "ねこる" })
     }
 
+    /// Spoken forms from games and manga. 言わねえ found only 言 (げん) before.
+    func testColloquialForms() {
+        assertDeinflects("言わねえ", to: "言う", as: .v5, reasons: [.negative, .colloquial])
+        assertDeinflects("言わねぇ", to: "言う", as: .v5, reasons: [.negative, .colloquial])
+        assertDeinflects("知らねー", to: "知る", as: .v5, reasons: [.negative, .colloquial])
+        assertDeinflects("食べねえ", to: "食べる", as: .v1, reasons: [.negative, .colloquial])
+        assertDeinflects("しねえ", to: "する", as: .vs, reasons: [.negative, .colloquial])
+        assertDeinflects("行きてえ", to: "行く", as: .v5, reasons: [.want, .colloquial])
+        assertDeinflects("高くねえ", to: "高い", as: .adjI, reasons: [.negative, .colloquial])
+        assertDeinflects("すげえ", to: "すごい", as: .adjI, reasons: [.colloquial])
+        assertDeinflects("うるせー", to: "うるさい", as: .adjI, reasons: [.colloquial])
+        assertDeinflects("ひでえ", to: "ひどい", as: .adjI, reasons: [.colloquial])
+        assertDeinflects("やべぇ", to: "やばい", as: .adjI, reasons: [.colloquial])
+        assertDeinflects("わりい", to: "わるい", as: .adjI, reasons: [.colloquial])
+        assertDeinflects("痛え", to: "痛い", as: .adjI, reasons: [.colloquial])
+        assertDeinflects("わかんない", to: "わかる", as: .v5, reasons: [.negative, .colloquial])
+        assertDeinflects("わかんねえ", to: "わかる", as: .v5, reasons: [.negative, .colloquial, .colloquial])
+        assertDeinflects("言っちまった", to: "言う", as: .v5, reasons: [.te, .completion, .past])
+        assertDeinflects("死んじまう", to: "死ぬ", as: .v5, reasons: [.te, .completion])
+        assertDeinflects("できやがった", to: "できる", as: .v1, reasons: [.yagaru, .past])
+        assertDeinflects("来やがる", to: "来る", as: .vk, reasons: [.yagaru])
+        assertDeinflects("持ってく", to: "持つ", as: .v5, reasons: [.te, .goingOn])
+        assertDeinflects("持っていった", to: "持つ", as: .v5, reasons: [.te, .goingOn, .past])
+        assertDeinflects("書きゃ", to: "書く", as: .v5, reasons: [.conditional, .colloquial])
+        assertDeinflects("食べりゃ", to: "食べる", as: .v1, reasons: [.conditional, .colloquial])
+        assertDeinflects("すりゃ", to: "する", as: .vs, reasons: [.conditional, .colloquial])
+        assertDeinflects("行かなけりゃ", to: "行く", as: .v5, reasons: [.negative, .conditional, .colloquial])
+        assertDeinflects("食べちゃ", to: "食べる", as: .v1, reasons: [.te, .colloquial])
+        assertDeinflects("読んじゃ", to: "読む", as: .v5, reasons: [.te, .colloquial])
+        // The long え after kana alone is not an adjective: まえ is not まい.
+        XCTAssertFalse(d.deinflect("まえ").contains { $0.term == "まい" })
+    }
+
     func testUninflectedWordIsKept() {
         XCTAssertEqual(d.deinflect("猫").first?.term, "猫")
         XCTAssertEqual(d.deinflect("猫").first?.wordClass, [])

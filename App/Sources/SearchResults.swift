@@ -57,6 +57,29 @@ enum SearchEngine {
 
     static let maxSuggestions = 24
 
+    /// What a tap on a results page should look up.
+    ///
+    /// Tapping the word the page is already about would open the same page
+    /// again. So the tap goes one word shorter instead: on the page for
+    /// 賽は投げられた, tapping 賽 opens 賽; tapping it again there does nothing.
+    /// - Parameters:
+    ///   - text: the tapped text, from the tapped character on.
+    ///   - shownKey: `expression|reading` of the first word on the page, if any.
+    /// - Returns: the text to look up, or nil when no shorter word starts there.
+    static func lookupTarget(_ text: String, shownKey: String?, store: TermSource, scanner: TextScanner) -> String? {
+        guard let shownKey else { return text }
+        var query = text
+        while true {
+            let hits = scanner.scan(query, in: store)
+            // Nothing at all: let the page say so, as before. Nothing shorter: stay.
+            guard let longest = hits.first?.matchedLength else { return query == text ? text : nil }
+            let top = hits.prefix { $0.matchedLength == longest }.map { $0.entry.expression + "|" + $0.entry.reading }
+            guard top.contains(shownKey) else { return query }
+            guard longest > 1 else { return nil }
+            query = String(query.prefix(longest - 1))
+        }
+    }
+
     static func run(_ request: Request, store: DictionaryStore, scanner: TextScanner) -> SearchResults {
         let text = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return SearchResults() }

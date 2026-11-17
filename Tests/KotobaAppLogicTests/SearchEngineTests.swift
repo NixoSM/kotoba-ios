@@ -23,6 +23,28 @@ final class SearchEngineTests: XCTestCase {
         XCTAssertEqual(found.direct.first?.reasons, [.whileDoing])
     }
 
+    /// Tapping the word a page is about goes one word shorter instead of
+    /// opening the same page again (検事 → 検事, 賽は投げられた → 賽).
+    func testTappingThePagesOwnWordGoesShorter() throws {
+        let store = try Fixtures.store()
+        func target(_ tapped: String, on page: String) -> String? {
+            let shown = Fixtures.search(page, in: store).direct.first.map { $0.expression + "|" + $0.reading }
+            return SearchEngine.lookupTarget(tapped, shownKey: shown, store: store, scanner: TextScanner())
+        }
+        // 新聞紙 on its own page: 新聞 next. On 新聞, 新 alone is no word here: nothing.
+        XCTAssertEqual(target("新聞紙を読む", on: "新聞紙"), "新聞")
+        XCTAssertNil(target("新聞を読む", on: "新聞"))
+        // A different word opens as before.
+        XCTAssertEqual(target("猫が", on: "新聞紙"), "猫が")
+        // Inflected on the page (食べなかった), the headword (食べる) is the same word.
+        XCTAssertEqual(target("食べる", on: "食べなかった"), nil)
+        XCTAssertEqual(target("食べ物", on: "食べなかった"), "食べ物")
+        // Tapping before the page has results: as before.
+        XCTAssertEqual(SearchEngine.lookupTarget("新聞", shownKey: nil, store: store, scanner: TextScanner()), "新聞")
+        // Nothing found at all: the new page says so, as before.
+        XCTAssertEqual(target("ぬぬぬ", on: "新聞"), "ぬぬぬ")
+    }
+
     func testRomajiAndLongVowels() throws {
         let store = try Fixtures.store()
         let plain = Fixtures.search("taberu", in: store)

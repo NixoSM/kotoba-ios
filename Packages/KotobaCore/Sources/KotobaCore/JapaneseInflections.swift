@@ -2,7 +2,7 @@ import Foundation
 
 /// Japanese inflection rules, written from the grammar itself (not ported from Yomitan).
 public enum JapaneseInflections {
-    public static let all: [InflectionRule] = godan + ichidan + suru + kuru + adjective + auxiliaries + stemEndings
+    public static let all: [InflectionRule] = godan + ichidan + suru + kuru + adjective + auxiliaries + stemEndings + colloquial
 
     private typealias R = InflectionRule
 
@@ -158,6 +158,10 @@ public enum JapaneseInflections {
         R("でおく", "で", from: .v5, to: .te, .preparation),
         R("とく", "て", from: .v5, to: .te, .preparation),
         R("どく", "で", from: .v5, to: .te, .preparation),
+        R("ていく", "て", from: .v5, to: .te, .goingOn),
+        R("でいく", "で", from: .v5, to: .te, .goingOn),
+        R("てく", "て", from: .v5, to: .te, .goingOn),
+        R("でく", "で", from: .v5, to: .te, .goingOn),
         // Built on ない.
         R("ないで", "ない", from: .surface, to: .adjI, .negativeTe),
         R("なきゃ", "ない", from: .surface, to: .adjI, .nakereba),
@@ -179,5 +183,62 @@ public enum JapaneseInflections {
         R("方", "", from: .surface, to: .stem, .wayOf),
         R("なさい", "", from: .surface, to: .stem, .politeImperative),
         R("たがる", "", from: .v5, to: .stem, .showsWant),
+        // 来やがった, 何してやがる: rude or scornful.
+        R("やがる", "", from: .v5, to: .stem, .yagaru),
     ]
+
+    /// Spoken Japanese as games, manga and anime write it.
+    ///
+    /// An い ending slurred into a long え (ない → ねえ, たい → てえ, すごい → すげえ,
+    /// 痛い → 痛え) or a long い (わるい → わりい), with え, ぇ or ー for the long
+    /// vowel. Each leads back to the い form, so 言わねえ → 言わない → 言う and
+    /// 行きてえ → 行きたい → 行く. Only dictionary entries tagged as い-adjectives
+    /// can match the result, which keeps accidents out (言え stays the imperative).
+    static let colloquial: [InflectionRule] = {
+        let long = ["え", "ぇ", "ー"]
+        // e-row kana and the a/o-row kana it can stand for: ね ← な (ない), げ ← ご (すごい).
+        let toE: [(e: String, from: [String])] = [
+            ("え", ["あ"]), ("け", ["か", "こ"]), ("げ", ["が", "ご"]), ("せ", ["さ", "そ"]), ("ぜ", ["ざ"]),
+            ("て", ["た", "と"]), ("で", ["だ", "ど"]), ("ね", ["な", "の"]), ("へ", ["は"]), ("べ", ["ば", "ぼ"]),
+            ("め", ["ま", "も"]), ("れ", ["ら", "ろ"]),
+        ]
+        var rules: [InflectionRule] = []
+        for row in toE {
+            for tail in long {
+                for kana in row.from {
+                    rules.append(R(row.e + tail, kana + "い", from: .surface, to: .adjI, .colloquial))
+                }
+            }
+        }
+        // u-row: わるい → わりい, さむい → さみい, あつい → あちい.
+        for (u, i) in [("る", "り"), ("む", "み"), ("く", "き"), ("ぶ", "び"), ("つ", "ち")] {
+            for tail in ["い", "ー"] {
+                rules.append(R(i + tail, u + "い", from: .surface, to: .adjI, .colloquial))
+            }
+        }
+        // After a kanji the kana that changed is not written: 痛え, 凄え, 偉ぇ.
+        // Never after kana alone (まえ is not まい): the huge minimum rules it out.
+        for tail in ["え", "ぇ"] {
+            rules.append(R(tail, "い", from: .surface, to: .adjI, .colloquial, minKanaStem: .max))
+        }
+        return rules + [
+            // ら before ない or ねえ said as ん: わかんない, 知んねえ, 食べらんない.
+            R("んない", "らない", from: .adjI, to: .adjI, .colloquial),
+            // ば said quickly: 書きゃ (書けば), 食べりゃ, すりゃ, 行かなけりゃ.
+            R("けりゃ", "ければ", from: .surface, to: .surface, .colloquial),
+            R("きゃ", "けば", from: .surface, to: .surface, .colloquial),
+            R("ぎゃ", "げば", from: .surface, to: .surface, .colloquial),
+            R("しゃ", "せば", from: .surface, to: .surface, .colloquial),
+            R("にゃ", "ねば", from: .surface, to: .surface, .colloquial),
+            R("びゃ", "べば", from: .surface, to: .surface, .colloquial),
+            R("みゃ", "めば", from: .surface, to: .surface, .colloquial),
+            R("りゃ", "れば", from: .surface, to: .surface, .colloquial),
+            // ては, では: 食べちゃだめ, 読んじゃいけない.
+            R("ちゃ", "て", from: .surface, to: .te, .colloquial),
+            R("じゃ", "で", from: .surface, to: .te, .colloquial),
+            // てしまう said quickly, rougher than ちゃう: 死んじまう, 言っちまった.
+            R("ちまう", "て", from: .v5, to: .te, .completion),
+            R("じまう", "で", from: .v5, to: .te, .completion),
+        ]
+    }()
 }

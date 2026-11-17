@@ -32,7 +32,18 @@ struct ResultsPane: View {
         case "search":
             if let q = value("q") { onSearch(q) }
         case "lookup":
-            if let t = value("t") { onLookup(Lookup(text: t, sentence: value("s") ?? t)) }
+            guard let t = value("t") else { return }
+            let sentence = value("s") ?? t
+            let page = outcome
+            // The word this page is about goes one word shorter instead of
+            // opening the same page again (賽は投げられた → 賽).
+            Task {
+                guard let target = await model.lookupTarget(t, from: page) else {
+                    model.toast = tr("Nessuna parola più corta qui")
+                    return
+                }
+                onLookup(Lookup(text: target, sentence: sentence))
+            }
         case "audio":
             guard let e = value("e"), let r = value("r") else { return }
             Task {
