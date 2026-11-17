@@ -68,7 +68,9 @@ final class HookSocket {
     }
 
     var onState: (State) -> Void = { _ in }
-    var onText: (String) -> Void = { _ in }
+    /// Lines in the order they came. Lines that arrive a few milliseconds apart
+    /// (the catch-up after the phone slept) come together in one call.
+    var onTexts: ([String]) -> Void = { _ in }
     /// Asked at every connection: tells Kotoba's extension which lines we already have.
     var resumeQuery: () -> String = { "" }
 
@@ -79,6 +81,8 @@ final class HookSocket {
     private var failures = 0
     /// Callbacks from a connection already replaced are ignored.
     private var generation = 0
+    private var burst = HookBurst<String>()
+    private var flushTask: Task<Void, Never>?
 
     func start(_ address: HookAddress) {
         if self.address == address, state != .off { return }
@@ -89,6 +93,7 @@ final class HookSocket {
     }
 
     func stop() {
+        flush()
         generation += 1
         retry?.cancel()
         retry = nil
@@ -101,6 +106,7 @@ final class HookSocket {
     /// Try again now (the person tapped the status, or the app came back).
     func reconnect() {
         guard let address else { return }
+        flush()
         generation += 1
         retry?.cancel()
         connection?.cancel()
@@ -154,7 +160,7 @@ final class HookSocket {
                     return
                 }
                 if let data, !data.isEmpty, metadata?.opcode == .text || metadata?.opcode == .binary {
-                    self.onText(String(decoding: data, as: UTF8.self))
+                    self.gather(String(decoding: data, as: UTF8.self))
                 }
                 if let error {
                     self.fail(Self.problem(error))
@@ -166,6 +172,7 @@ final class HookSocket {
     }
 
     private func fail(_ problem: Problem) {
+        flush()
         generation += 1
         connection?.cancel()
         connection = nil
@@ -179,6 +186,38 @@ final class HookSocket {
             guard !Task.isCancelled else { return }
             self?.connect()
         }
+    }
+
+    // MARK: Gathering lines
+
+    private static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
+
+    private func gather(_ text: String) {
+        let deadline = burst.add(text, at: Self.now)
+        // A task already waiting checks the deadline again when it wakes.
+        guard flushTask == nil else { return }
+        scheduleFlush(at: deadline)
+    }
+
+    private func scheduleFlush(at deadline: TimeInterval) {
+        flushTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, deadline - Self.now)))
+            guard let self, !Task.isCancelled else { return }
+            self.flushTask = nil
+            if let batch = self.burst.take(at: Self.now) {
+                self.onTexts(batch)
+            } else if let next = self.burst.deadline {
+                self.scheduleFlush(at: next)
+            }
+        }
+    }
+
+    /// Hands over whatever is waiting now (the connection ends).
+    private func flush() {
+        flushTask?.cancel()
+        flushTask = nil
+        let batch = burst.takeAll()
+        if !batch.isEmpty { onTexts(batch) }
     }
 
     nonisolated static func problem(_ error: NWError) -> Problem {
