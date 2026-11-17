@@ -298,6 +298,7 @@ enum L10n {
         "Non riesco a creare il collegamento per AnkiMobile.": ("Couldn't build the AnkiMobile link.", "AnkiMobile へのリンクを作成できません。"),
         "AnkiMobile non risulta installato.": ("AnkiMobile doesn't seem to be installed.", "AnkiMobile がインストールされていないようです。"),
         "Aggiunta ad Anki": ("Added to Anki", "Anki に追加しました"),
+        "Nessuna parola più corta qui": ("No shorter word here", "これより短い語はありません"),
         "Ordine e attivazione applicati a {0} dizionari.": ("Order and activation applied to {0} dictionaries.", "{0} 冊の辞書に順番と有効・無効を適用しました。"),
         "Non ancora importati: {0}.": ("Not imported yet: {0}.", "未読み込み：{0}。"),
         "Ordinamento per frequenza: {0}.": ("Sorting by frequency: {0}.", "頻度順の基準：{0}。"),
@@ -478,6 +479,9 @@ enum L10n {
         "desiderio altrui たがる": ("someone else's wish たがる", "希望 たがる"),
         "negativo ぬ・ん": ("negative ぬ・ん", "否定 ぬ・ん"),
         "volitivo negativo まい": ("negative volitional まい", "否定意向 まい"),
+        "parlato": ("colloquial", "口語"),
+        "sprezzante やがる": ("scornful やがる", "軽蔑 やがる"),
+        "andare avanti ていく": ("going on ていく", "継続 ていく"),
         "obbligo ねば": ("obligation ねば", "義務 ねば"),
 
         // From PC (texthooker)

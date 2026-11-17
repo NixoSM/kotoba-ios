@@ -40,6 +40,9 @@ extension Reason {
         case .nu: tr("negativo ぬ・ん")
         case .negativeVolitional: tr("volitivo negativo まい")
         case .neba: tr("obbligo ねば")
+        case .colloquial: tr("parlato")
+        case .yagaru: tr("sprezzante やがる")
+        case .goingOn: tr("andare avanti ていく")
         }
     }
 }

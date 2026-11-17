@@ -220,6 +220,16 @@ final class AppModel {
         }.value
     }
 
+    /// What a tap on the results page `page` should open: see `SearchEngine.lookupTarget`.
+    func lookupTarget(_ text: String, from page: SearchResults) async -> String? {
+        guard let store else { return text }
+        let scanner = scanner
+        let shown = page.direct.first.map { $0.expression + "|" + $0.reading }
+        return await Task.detached(priority: .userInitiated) {
+            SearchEngine.lookupTarget(text, shownKey: shown, store: store, scanner: scanner)
+        }.value
+    }
+
     private(set) var reverseIndexStatus: String?
 
     private func indexStatus(_ text: String?) { reverseIndexStatus = text }

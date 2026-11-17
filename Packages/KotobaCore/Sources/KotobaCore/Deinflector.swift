@@ -77,6 +77,7 @@ public enum Reason: String, Hashable, Sendable, CaseIterable {
     case want, stem, progressive, completion, preparation, adverb, noun, seemingness, excess
     case negativeTe, nakereba, zu
     case whileDoing, easyTo, hardTo, wayOf, politeImperative, showsWant, nu, negativeVolitional, neba
+    case colloquial, yagaru, goingOn
 }
 
 /// A candidate dictionary form, with the chain of steps that produced it.

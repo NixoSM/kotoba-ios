@@ -190,7 +190,10 @@ enum ResultsPage {
         html += "</div>"
         html += "<h1 class=\"headword\" lang=\"ja\">\(headword(g, a))</h1>"
         if !g.reasons.isEmpty {
-            let chain = g.reasons.map(\.italianLabel).joined(separator: " › ")
+            // わかんねえ is spoken twice over (ねえ, ん): say it once.
+            let labels = g.reasons.map(\.italianLabel)
+            let chain = labels.enumerated().filter { $0.offset == 0 || $0.element != labels[$0.offset - 1] }
+                .map(\.element).joined(separator: " › ")
             html += "<div class=\"chain\">\(GlossaryHTML.escape(g.matchedText)) ← \(GlossaryHTML.escape(chain))</div>"
         }
         html += metaRow(g, a)
