@@ -67,6 +67,9 @@ final class HookerModel {
     private(set) var searching = false
     /// Failed tries in a row, to know when to suggest checking the setup.
     private(set) var failuresInARow = 0
+    /// How many lines the last arrival added: more than one is a catch-up,
+    /// which the screen shows at once instead of scrolling line by line.
+    private(set) var lastArrivalCount = 0
 
     var settings = HookerSettings.load() {
         didSet {
@@ -96,7 +99,7 @@ final class HookerModel {
             if case .retrying = state { self.failuresInARow += 1 }
             if state == .connected { self.failuresInARow = 0 }
         }
-        socket.onText = { [weak self] raw in self?.receiveFromSocket(raw) }
+        socket.onTexts = { [weak self] raws in self?.receiveFromSocket(raws) }
         socket.resumeQuery = { [weak self] in self?.resumeQuery ?? "" }
         inbox.onState = { [weak self] in self?.inboxState = $0 }
         inbox.onText = { [weak self] in self?.receive($0) }
@@ -165,26 +168,45 @@ final class HookerModel {
 
     private var resumeQuery: String {
         guard let point = resumePoint,
-              let session = point.session.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { return "kotoba=1" }
-        return "kotoba=1&session=\(session)&since=\(point.id)"
+              let session = point.session.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { return "kotoba=1&batch=1" }
+        // batch=1: what was missed comes as one message (older extensions ignore it).
+        return "kotoba=1&batch=1&session=\(session)&since=\(point.id)"
     }
 
-    private func receiveFromSocket(_ raw: String) {
-        let message = HookText.parse(raw)
-        if let id = message.id, let session = message.session {
-            if let point = resumePoint, point.session == session, id <= point.id { return }
-            resumePoint = (session, id)
+    private func receiveFromSocket(_ raws: [String]) {
+        var point = resumePoint
+        var texts: [String] = []
+        for message in raws.flatMap(HookText.messages) {
+            if let id = message.id, let session = message.session {
+                if let point, point.session == session, id <= point.id { continue }
+                point = (session, id)
+            }
+            texts.append(message.text)
         }
-        receive(message.text)
+        if let point, point.session != resumePoint?.session || point.id != resumePoint?.id { resumePoint = point }
+        if texts.count > 1 { Diagnostics.shared.log("Texthooker: \(texts.count) lines at once (catch-up)") }
+        receive(texts)
     }
 
-    func receive(_ raw: String) {
-        let text = HookText.clean(raw, rules: settings.rules, readings: readings)
-        guard !text.isEmpty else { return }
-        if settings.skipDuplicates, lines.last?.text == text { return }
-        lines.append(HookLine(text: text, original: raw))
-        if lines.count > Self.maxLines { lines.removeFirst(lines.count - Self.maxLines) }
-        if !isOnScreen { unread += 1 }
+    func receive(_ raw: String) { receive([raw]) }
+
+    /// Adds the lines in one change, so the screen redraws once for all of them.
+    func receive(_ raws: [String]) {
+        var updated = lines
+        var added = 0
+        // Only what the list can hold: a catch-up may bring 2000 lines.
+        for raw in raws.suffix(Self.maxLines) {
+            let text = HookText.clean(raw, rules: settings.rules, readings: readings)
+            guard !text.isEmpty else { continue }
+            if settings.skipDuplicates, updated.last?.text == text { continue }
+            updated.append(HookLine(text: text, original: raw))
+            added += 1
+        }
+        guard added > 0 else { return }
+        if updated.count > Self.maxLines { updated.removeFirst(updated.count - Self.maxLines) }
+        lastArrivalCount = added
+        lines = updated
+        if !isOnScreen { unread += added }
         scheduleSave()
     }
 

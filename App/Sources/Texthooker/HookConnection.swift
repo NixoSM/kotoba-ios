@@ -56,7 +56,7 @@ final class HookSocket {
         case retrying(Problem)
     }
 
-    enum Problem: Equatable {
+    enum Problem: Equatable, Sendable {
         /// The PC answered, but nothing listens on that port yet.
         case refused
         /// No answer: wrong address, another Wi-Fi, or the Windows firewall.
@@ -68,7 +68,9 @@ final class HookSocket {
     }
 
     var onState: (State) -> Void = { _ in }
-    var onText: (String) -> Void = { _ in }
+    /// Lines in the order they came. Lines that arrive a few milliseconds apart
+    /// (the catch-up after the phone slept) come together in one call.
+    var onTexts: ([String]) -> Void = { _ in }
     /// Asked at every connection: tells Kotoba's extension which lines we already have.
     var resumeQuery: () -> String = { "" }
 
@@ -79,6 +81,8 @@ final class HookSocket {
     private var failures = 0
     /// Callbacks from a connection already replaced are ignored.
     private var generation = 0
+    private var burst = HookBurst<String>()
+    private var flushTask: Task<Void, Never>?
 
     func start(_ address: HookAddress) {
         if self.address == address, state != .off { return }
@@ -89,6 +93,7 @@ final class HookSocket {
     }
 
     func stop() {
+        flush()
         generation += 1
         retry?.cancel()
         retry = nil
@@ -101,6 +106,7 @@ final class HookSocket {
     /// Try again now (the person tapped the status, or the app came back).
     func reconnect() {
         guard let address else { return }
+        flush()
         generation += 1
         retry?.cancel()
         connection?.cancel()
@@ -121,51 +127,70 @@ final class HookSocket {
         let parameters = NWParameters(tls: nil, tcp: tcp)
         let ws = NWProtocolWebSocket.Options()
         ws.autoReplyPing = true
-        ws.maximumMessageSize = 1 << 20
+        // The catch-up after the phone slept comes as one message: up to 2000 lines.
+        ws.maximumMessageSize = 8 << 20
         parameters.defaultProtocolStack.applicationProtocols.insert(ws, at: 0)
         let connection = NWConnection(to: .url(url), using: parameters)
         self.connection = connection
         state = .connecting
-        connection.stateUpdateHandler = { [weak self, weak connection] newState in
-            MainActor.assumeIsolated {
-                guard let self, let connection, self.generation == current else { return }
-                switch newState {
-                case .ready:
-                    self.failures = 0
-                    self.state = .connected
-                    self.receive(on: connection, generation: current)
-                case .waiting(let error), .failed(let error):
-                    self.fail(Self.problem(error))
-                default:
-                    break
+        // Callbacks come on the reading queue; anything that touches state hops
+        // to the main thread, where a replaced connection's news is dropped.
+        let deliver: @Sendable (Received) -> Void = { [weak self] event in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, self.generation == current else { return }
+                    switch event {
+                    case .ready:
+                        self.failures = 0
+                        self.state = .connected
+                    case .text(let text): self.gather(text)
+                    case .failed(let problem): self.fail(problem)
+                    }
                 }
             }
         }
-        connection.start(queue: .main)
+        connection.stateUpdateHandler = { [weak connection] newState in
+            switch newState {
+            case .ready:
+                deliver(.ready)
+                if let connection { Self.receive(on: connection, deliver: deliver) }
+            case .waiting(let error), .failed(let error):
+                deliver(.failed(Self.problem(error)))
+            default:
+                break
+            }
+        }
+        connection.start(queue: Self.readQueue)
     }
 
-    private func receive(on connection: NWConnection, generation current: Int) {
-        connection.receiveMessage { [weak self, weak connection] data, context, _, error in
-            MainActor.assumeIsolated {
-                guard let self, let connection, self.generation == current else { return }
-                let metadata = context?.protocolMetadata(definition: NWProtocolWebSocket.definition) as? NWProtocolWebSocket.Metadata
-                if metadata?.opcode == .close {
-                    self.fail(.closed)
-                    return
-                }
-                if let data, !data.isEmpty, metadata?.opcode == .text || metadata?.opcode == .binary {
-                    self.onText(String(decoding: data, as: UTF8.self))
-                }
-                if let error {
-                    self.fail(Self.problem(error))
-                    return
-                }
-                self.receive(on: connection, generation: current)
+    private enum Received: Sendable { case ready, text(String), failed(Problem) }
+
+    /// Messages are read on their own queue, asking for the next one straight
+    /// away. Reading on the main thread meant one message per screen refresh,
+    /// and a long list takes a while to redraw: a catch-up of a few hundred
+    /// lines trickled in for many seconds.
+    private nonisolated static let readQueue = DispatchQueue(label: "kotoba.hook.read", qos: .userInitiated)
+
+    private nonisolated static func receive(on connection: NWConnection, deliver: @escaping @Sendable (Received) -> Void) {
+        connection.receiveMessage { data, context, _, error in
+            let metadata = context?.protocolMetadata(definition: NWProtocolWebSocket.definition) as? NWProtocolWebSocket.Metadata
+            if metadata?.opcode == .close {
+                deliver(.failed(.closed))
+                return
             }
+            if let data, !data.isEmpty, metadata?.opcode == .text || metadata?.opcode == .binary {
+                deliver(.text(String(decoding: data, as: UTF8.self)))
+            }
+            if let error {
+                deliver(.failed(Self.problem(error)))
+                return
+            }
+            receive(on: connection, deliver: deliver)
         }
     }
 
     private func fail(_ problem: Problem) {
+        flush()
         generation += 1
         connection?.cancel()
         connection = nil
@@ -179,6 +204,38 @@ final class HookSocket {
             guard !Task.isCancelled else { return }
             self?.connect()
         }
+    }
+
+    // MARK: Gathering lines
+
+    private static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
+
+    private func gather(_ text: String) {
+        let deadline = burst.add(text, at: Self.now)
+        // A task already waiting checks the deadline again when it wakes.
+        guard flushTask == nil else { return }
+        scheduleFlush(at: deadline)
+    }
+
+    private func scheduleFlush(at deadline: TimeInterval) {
+        flushTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, deadline - Self.now)))
+            guard let self, !Task.isCancelled else { return }
+            self.flushTask = nil
+            if let batch = self.burst.take(at: Self.now) {
+                self.onTexts(batch)
+            } else if let next = self.burst.deadline {
+                self.scheduleFlush(at: next)
+            }
+        }
+    }
+
+    /// Hands over whatever is waiting now (the connection ends).
+    private func flush() {
+        flushTask?.cancel()
+        flushTask = nil
+        let batch = burst.takeAll()
+        if !batch.isEmpty { onTexts(batch) }
     }
 
     nonisolated static func problem(_ error: NWError) -> Problem {

@@ -6,6 +6,7 @@ import KotobaCore
 struct TexthookerView: View {
     @Environment(AppModel.self) private var model
     @Environment(HookerModel.self) private var hooker
+    @Environment(\.scenePhase) private var scenePhase
     let onSearch: (String) -> Void
 
     /// The word tapped, in which line.
@@ -112,7 +113,18 @@ struct TexthookerView: View {
             .onChange(of: hooker.lines.last?.id) { _, last in
                 // While a word is open, new lines don't pull the page away from it.
                 guard let last, !showingResults else { return }
-                withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(last, anchor: .bottom) }
+                if hooker.lastArrivalCount > 1 {
+                    // Lines missed while the phone was away: straight to the newest,
+                    // no scrolling through each one.
+                    jump(proxy, to: last)
+                } else {
+                    withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(last, anchor: .bottom) }
+                }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                // Back from the lock screen: the newest line, not where the page was.
+                guard phase == .active, !showingResults, let last = hooker.lines.last?.id else { return }
+                jump(proxy, to: last)
             }
             .onChange(of: showingResults) { _, showing in
                 let target = showing ? pick?.lineID : hooker.lines.last?.id
@@ -123,6 +135,18 @@ struct TexthookerView: View {
                     withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(target, anchor: .bottom) }
                 }
             }
+        }
+    }
+
+    /// Scrolls with no animation. Rows far up have only estimated heights in a
+    /// lazy stack, so it lands again once they are measured.
+    private func jump(_ proxy: ScrollViewProxy, to id: UUID) {
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { proxy.scrollTo(id, anchor: .bottom) }
+        Task { @MainActor in
+            await Task.yield()
+            withTransaction(instant) { proxy.scrollTo(id, anchor: .bottom) }
         }
     }
 

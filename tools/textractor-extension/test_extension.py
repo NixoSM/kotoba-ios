@@ -73,5 +73,25 @@ assert [json.loads(t)["sentence"] for t in texts(frames(k, b""))] == ["三行目
 masked(k, 8, b"\x03\xe8")
 assert any(op == 8 for op, _ in frames(k, b"")), "close is answered"
 
+# The phone's way: what it missed as one message, first, then new lines one by one.
+b, rest = connect(f"/?kotoba=1&batch=1&session={session}&since=1")
+got = [json.loads(t) for t in texts(frames(b, rest))]
+assert len(got) == 1 and got[0]["session"] == session, got
+assert [(l["id"], l["sentence"]) for l in got[0]["lines"]] == [(2, '引用 " と \\'), (3, "三行目")], got
+say("四行目"); time.sleep(0.2)
+assert [json.loads(t)["sentence"] for t in texts(frames(b, b""))] == ["四行目"], "after the catch-up, lines come one by one"
+
+b2, rest = connect(f"/?kotoba=1&batch=1&session={session}&since=4")
+got = [json.loads(t) for t in texts(frames(b2, rest))]
+assert got == [{"session": session, "lines": []}], "nothing missed: an empty catch-up, so the phone knows"
+
+for i in range(1500): say(f"大量の行{i}")
+time.sleep(0.5)
+b3, rest = connect(f"/?kotoba=1&batch=1&session={session}&since=4")
+got = [json.loads(t) for t in texts(frames(b3, rest, wait=1.5))]
+assert len(got) == 1, f"a big backlog is still one message, got {len(got)}"
+lines = got[0]["lines"]
+assert len(lines) == 1500 and lines[-1]["sentence"] == "大量の行1499" and lines[0]["id"] == 5, (len(lines), lines[:1])
+
 server.stdin.close(); server.wait(timeout=5)
 print("extension server: OK")
