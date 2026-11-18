@@ -120,7 +120,10 @@ righe a mano (utile per provare che telefono e PC si vedono).
 - L'estensione di Kotoba fa lo stesso, e in più: un client che si collega a
   `/?kotoba=1&session=S&since=N` riceve in JSON (`{"sentence","id","session"}`)
   le righe dopo la N; se S non è la sessione attuale (Textractor riavviato) le
-  riceve tutte. Codice e test in `tools/textractor-extension/`.
+  riceve tutte. Con `&batch=1` (lo usa Kotoba) le righe perse arrivano in un
+  solo messaggio, sempre per primo: `{"session":S,"lines":[{"id","sentence"},…]}`
+  (al massimo gli ultimi 4 MB), così al ritorno l'ultima riga è subito lì.
+  Codice e test in `tools/textractor-extension/`.
 - Il piano B è un piccolo server HTTP sull'iPhone (porta 6678): `POST /text` con il
   testo in UTF-8; `GET /` dà la pagina per incollare.
 - Codice: `App/Sources/Texthooker/`, pulizia del testo in

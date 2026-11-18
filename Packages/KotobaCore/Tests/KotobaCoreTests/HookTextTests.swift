@@ -10,6 +10,20 @@ final class HookTextTests: XCTestCase {
         XCTAssertEqual(HookText.message("{壊れた"), "{壊れた")
     }
 
+    func testCatchUpMessageHoldsManyLines() {
+        let raw = #"{"session":"00ab","lines":[{"id":4,"sentence":"四"},{"id":5,"sentence":"五 \"引用\""}]}"#
+        let ms = HookText.messages(raw)
+        XCTAssertEqual(ms.map(\.text), ["四", #"五 "引用""#])
+        XCTAssertEqual(ms.map(\.id), [4, 5])
+        XCTAssertEqual(ms.map(\.session), ["00ab", "00ab"])
+        XCTAssertEqual(HookText.messages(#"{"session":"00ab","lines":[]}"#), [])
+        // Anything else is one line, as before.
+        XCTAssertEqual(HookText.messages("ただの行").map(\.text), ["ただの行"])
+        XCTAssertEqual(HookText.messages(#"{"sentence":"一","id":1,"session":"s"}"#).map(\.id), [1])
+        // A line that happens to mention "lines" stays a line.
+        XCTAssertEqual(HookText.messages(#"{"sentence":"\"lines\"","id":2}"#).map(\.text), [#""lines""#])
+    }
+
     func testMessageWithHistoryPosition() {
         let m = HookText.parse(#"{"sentence":"三行目","id":3,"session":"00ab"}"#)
         XCTAssertEqual(m.text, "三行目")

@@ -25,6 +25,23 @@ public enum HookText {
         return Message(text: raw)
     }
 
+    /// The messages inside one WebSocket message: the catch-up Kotoba's
+    /// extension sends when asked with batch=1 ({"session":…,"lines":[…]})
+    /// holds many, newest last; any other message holds one.
+    public static func messages(_ raw: String) -> [Message] {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("{"), trimmed.contains("\"lines\""), let data = trimmed.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let lines = object["lines"] as? [[String: Any]] {
+            let session = object["session"] as? String
+            return lines.compactMap { line in
+                guard let sentence = line["sentence"] as? String else { return nil }
+                return Message(text: sentence, id: (line["id"] as? NSNumber)?.intValue, session: session)
+            }
+        }
+        return [parse(raw)]
+    }
+
     /// The line inside one WebSocket message.
     public static func message(_ raw: String) -> String { parse(raw).text }
 

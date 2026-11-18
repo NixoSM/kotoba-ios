@@ -168,15 +168,15 @@ final class HookerModel {
 
     private var resumeQuery: String {
         guard let point = resumePoint,
-              let session = point.session.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { return "kotoba=1" }
-        return "kotoba=1&session=\(session)&since=\(point.id)"
+              let session = point.session.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { return "kotoba=1&batch=1" }
+        // batch=1: what was missed comes as one message (older extensions ignore it).
+        return "kotoba=1&batch=1&session=\(session)&since=\(point.id)"
     }
 
     private func receiveFromSocket(_ raws: [String]) {
         var point = resumePoint
         var texts: [String] = []
-        for raw in raws {
-            let message = HookText.parse(raw)
+        for message in raws.flatMap(HookText.messages) {
             if let id = message.id, let session = message.session {
                 if let point, point.session == session, id <= point.id { continue }
                 point = (session, id)
@@ -184,6 +184,7 @@ final class HookerModel {
             texts.append(message.text)
         }
         if let point, point.session != resumePoint?.session || point.id != resumePoint?.id { resumePoint = point }
+        if texts.count > 1 { Diagnostics.shared.log("Texthooker: \(texts.count) lines at once (catch-up)") }
         receive(texts)
     }
 
@@ -193,7 +194,8 @@ final class HookerModel {
     func receive(_ raws: [String]) {
         var updated = lines
         var added = 0
-        for raw in raws {
+        // Only what the list can hold: a catch-up may bring 2000 lines.
+        for raw in raws.suffix(Self.maxLines) {
             let text = HookText.clean(raw, rules: settings.rules, readings: readings)
             guard !text.isEmpty else { continue }
             if settings.skipDuplicates, updated.last?.text == text { continue }

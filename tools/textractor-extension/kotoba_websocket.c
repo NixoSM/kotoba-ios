@@ -10,6 +10,11 @@
  *   missed (the phone was asleep), then the new ones:
  *   {"sentence":"…","id":N,"session":"S"}
  *   If S is not this run's session (Textractor restarted), it gets them all.
+ * - with &batch=1 as well, the lines it missed come as ONE message, always
+ *   sent first (empty when nothing was missed), then new lines one by one:
+ *   {"session":"S","lines":[{"id":N,"sentence":"…"},…]}
+ *   so the phone shows the newest line at once instead of receiving hundreds
+ *   of messages. At most the newest 4 MB of lines go in it.
  *
  * Build (Windows DLLs, from Linux or Windows with MinGW):
  *   i686-w64-mingw32-gcc   -O2 -shared -o kotoba_websocket_x86.dll kotoba_websocket.c -lws2_32 -static-libgcc
@@ -142,6 +147,8 @@ typedef struct {
     int open;     /* handshake done */
     int closing;  /* close after the output is flushed */
     int json;     /* a Kotoba client: JSON with ids */
+    int batch;    /* wants the catch-up as one message */
+    int caught_up; /* that message was queued */
     uint64_t cursor; /* last id sent */
     unsigned char in[IN_SIZE];
     size_t inlen;
@@ -242,11 +249,13 @@ static int handshake(client_t *c) {
              accept);
     out_append(c, reply, strlen(reply));
 
-    char flag[16], since[32], their_session[64];
+    char flag[16], since[32], their_session[64], batch[8];
     query(path, "kotoba", flag, sizeof flag);
+    query(path, "batch", batch, sizeof batch);
     query(path, "since", since, sizeof since);
     query(path, "session", their_session, sizeof their_session);
     c->json = flag[0] != 0;
+    c->batch = c->json && batch[0] == '1';
     LOCK();
     if (!c->json) {
         c->cursor = last_id; /* texthooker-ui: only new lines, as before */
@@ -287,34 +296,88 @@ static int frames(client_t *c) {
     }
 }
 
-static void json_line(client_t *c, uint64_t id, const char *text) {
-    size_t n = strlen(text);
-    char *buf = (char *)malloc(n * 6 + 96);
-    if (!buf) return;
+/* Writes text as JSON string content (no quotes); buf needs strlen(text) * 6 bytes. */
+static size_t json_escape(char *buf, const char *text) {
     size_t o = 0;
-    o += sprintf(buf + o, "{\"sentence\":\"");
     for (const unsigned char *p = (const unsigned char *)text; *p; p++) {
         if (*p == '"' || *p == '\\') { buf[o++] = '\\'; buf[o++] = (char)*p; }
         else if (*p == '\n') { buf[o++] = '\\'; buf[o++] = 'n'; }
         else if (*p == '\r') { buf[o++] = '\\'; buf[o++] = 'r'; }
         else if (*p == '\t') { buf[o++] = '\\'; buf[o++] = 't'; }
-        else if (*p < 0x20) o += sprintf(buf + o, "\\u%04x", *p);
+        else if (*p < 0x20) o += (size_t)sprintf(buf + o, "\\u%04x", *p);
         else buf[o++] = (char)*p;
     }
+    return o;
+}
+
+static size_t put_id(char *buf, uint64_t id) {
     char digits[24];
     int d = 0;
+    size_t o = 0;
     do { digits[d++] = (char)('0' + id % 10); id /= 10; } while (id);
-    o += sprintf(buf + o, "\",\"id\":");
     while (d) buf[o++] = digits[--d];
-    o += sprintf(buf + o, ",\"session\":\"%s\"}", session);
+    return o;
+}
+
+static void json_line(client_t *c, uint64_t id, const char *text) {
+    size_t n = strlen(text);
+    char *buf = (char *)malloc(n * 6 + 96);
+    if (!buf) return;
+    size_t o = 0;
+    o += (size_t)sprintf(buf + o, "{\"sentence\":\"");
+    o += json_escape(buf + o, text);
+    o += (size_t)sprintf(buf + o, "\",\"id\":");
+    o += put_id(buf + o, id);
+    o += (size_t)sprintf(buf + o, ",\"session\":\"%s\"}", session);
     send_frame(c, 1, buf, o);
     free(buf);
+}
+
+#define BATCH_BUDGET (4u << 20)
+
+/* The lines after c->cursor as one message, newest last. Called with the lock held. */
+static void json_batch(client_t *c) {
+    /* From the newest back, as many as fit the budget. */
+    uint64_t from = last_id + 1;
+    size_t need = 64;
+    while (from > c->cursor + 1 && from > first_id()) {
+        const char *line = history[(from - 1) % HISTORY];
+        size_t n = line ? strlen(line) * 6 + 48 : 0;
+        if (need + n > BATCH_BUDGET && from <= last_id) break;
+        need += n;
+        from--;
+    }
+    char *buf = (char *)malloc(need);
+    if (!buf) return;
+    size_t o = (size_t)sprintf(buf, "{\"session\":\"%s\",\"lines\":[", session);
+    int first = 1;
+    for (uint64_t id = from; id <= last_id; id++) {
+        const char *line = history[id % HISTORY];
+        if (!line) continue;
+        if (!first) buf[o++] = ',';
+        first = 0;
+        o += (size_t)sprintf(buf + o, "{\"id\":");
+        o += put_id(buf + o, id);
+        o += (size_t)sprintf(buf + o, ",\"sentence\":\"");
+        o += json_escape(buf + o, line);
+        buf[o++] = '"';
+        buf[o++] = '}';
+    }
+    buf[o++] = ']';
+    buf[o++] = '}';
+    send_frame(c, 1, buf, o);
+    free(buf);
+    c->cursor = last_id;
 }
 
 /* Queues every line the client hasn't had yet. */
 static void catch_up(client_t *c) {
     LOCK();
     if (c->cursor + 1 < first_id()) c->cursor = first_id() - 1;
+    if (c->batch && !c->caught_up) {
+        json_batch(c);
+        c->caught_up = 1;
+    }
     while (c->cursor < last_id && c->outlen < (1u << 20)) {
         c->cursor++;
         const char *line = history[c->cursor % HISTORY];
